@@ -1,7 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════
  * COLOR WARS — js/views/matchmaking.js
- * (Independiente de state.js)
  * ═══════════════════════════════════════════════════════
  */
 
@@ -82,20 +81,17 @@ function startCountdown($c) {
       clearInterval(_countdownTimer);
       
       try {
-        // 1. Cobrar entrada (200 Bs)
         const profile = getProfile();
         const newBalance = profile.wallet_bs - 200;
         await getSupabase().from('users').update({ wallet_bs: newBalance }).eq('id', profile.id);
         setProfile({ ...profile, wallet_bs: newBalance });
 
-        // 2. Crear tablero en memoria global (Cero errores)
+        // FABRICAMOS EL TABLERO Y LO GUARDAMOS EN LA SESIÓN GLOBAL
         window.CW_SESSION = {
-          isOver: false,
-          board: Array(5).fill(null).map(() => Array(5).fill(null).map(() => ({ owner: null, mass: 0, blocked: false })))
+          board: Array(5).fill(null).map(() => Array(5).fill(null).map(() => ({ owner: null, mass: 0 })))
         };
 
-        // 3. Saltar a la Arena
-        setView('game');
+        setView('game'); // Salto a la Arena 100% seguro
       } catch (err) {
         showToast('Error de conexión', 'error');
         setView('dashboard');
