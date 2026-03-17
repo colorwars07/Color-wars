@@ -1,7 +1,7 @@
 /**
  * ═══════════════════════════════════════════════════════
  * COLOR WARS — js/game/engine.js
- * Game Engine: TURN-BASED (10s), Bot 65/35, Chain Reaction
+ * Game Engine: TURN-BASED (10s) con Control de Ronda
  * ═══════════════════════════════════════════════════════
  */
 
@@ -19,6 +19,7 @@ let _currentTurn = 'pink';
 let _turnTimer = null;
 let _timeLeft = 10;
 let _isAnimating = false;
+let _turnCount = 0; // ⚡ AQUÍ ESTÁ LA SOLUCIÓN AL CORTOCIRCUITO
 
 const _stateCache = { currentGame: null };
 subscribe('currentGame', (val) => { _stateCache.currentGame = val; });
@@ -31,6 +32,7 @@ export function startEngine(onRender, onGameOver) {
   _active = true;
   _currentTurn = 'pink';
   _isAnimating = false;
+  _turnCount = 0; // Reiniciamos el contador de turnos
   _startTurn();
 }
 
@@ -39,7 +41,6 @@ export function stopEngine() {
   if (_turnTimer) clearInterval(_turnTimer);
 }
 
-// 🔥 AQUÍ ESTÁ LA FUNCIÓN QUE FALTABA PARA CONTAR LOS PUNTOS 🔥
 export function getCellCounts() {
   const game = getState('currentGame');
   if (!game) return { pink: 0, blue: 0, neutral: 0 };
@@ -64,7 +65,7 @@ export function playerClick(row, col) {
 
   const cell = game.board[row][col];
   if (cell.blocked) return;
-  if (cell.owner === 'blue') return; // Solo puedes tocar las tuyas o vacías
+  if (cell.owner === 'blue') return; // Solo tuyas o vacías
 
   _clearTimer();
   _addMass(game.board, row, col, 'pink');
@@ -86,7 +87,6 @@ function _startTurn() {
   }, 1000);
 
   if (_currentTurn === 'blue') {
-    // Turno del bot: simula que está pensando (1.5s a 2.5s)
     setTimeout(() => {
       if (!_active || _currentTurn !== 'blue') return;
       _clearTimer();
@@ -110,19 +110,19 @@ function _updateTimerUI() {
 
 function _passTurn() {
   if (!_active) return;
+  _turnCount++; // ⚡ AUMENTAMOS EL TURNO
   _currentTurn = _currentTurn === 'pink' ? 'blue' : 'pink';
   _startTurn();
 }
 
 // ── LÓGICA DE MASA Y EXPLOSIÓN ─────────────────────────
-
 async function _addMass(board, row, col, color) {
-  _isAnimating = true; // Bloquea clics durante la explosión
+  _isAnimating = true; 
   await _processMass(board, row, col, color);
   
   if (!_active) return;
   
-  const gameOver = _checkGameOver(getState('currentGame').board);
+  const gameOver = _checkGameOver(board);
   if (!gameOver) {
     _passTurn();
   }
@@ -137,7 +137,7 @@ async function _processMass(board, row, col, color) {
   cell.owner = color;
   cell.mass++;
 
-  if (cell.mass >= 4) { // Explota al llegar a 4 de masa
+  if (cell.mass >= 4) { 
     await _explode(board, row, col, color);
   } else {
     updateGameBoard(board);
@@ -149,39 +149,32 @@ async function _explode(board, row, col, color) {
   if (!_active) return;
   
   board[row][col].mass = 0;
-  board[row][col].owner = null; // Se vuelve neutral al explotar
+  board[row][col].owner = null; 
   updateGameBoard(board);
   _onRender?.();
 
   const neighbors = getNeighbors(row, col, GAME_CFG.BOARD_SIZE);
-  
-  // Pausa visual de la explosión
   await new Promise(r => setTimeout(r, 200));
 
   for (const n of neighbors) {
     if (!_active) break;
     const freshGame = getState('currentGame');
     if (!freshGame) break;
-    
     await _processMass(freshGame.board, n.row, n.col, color);
   }
 }
 
-// ── IA DEL BOT (65/35) ────────────────────────────────
-
+// ── IA DEL BOT ────────────────────────────────
 function _botMove(board) {
   const roll = Math.floor(Math.random() * 100) + 1;
 
   if (roll <= 65) {
-    // 65%: Movimiento Óptimo (Buscar casillas a punto de explotar)
     const readyToExplode = _getCells(board, 'blue').filter(c => board[c[0]][c[1]].mass === 3);
     if (readyToExplode.length) {
       const [r, c] = readyToExplode[Math.floor(Math.random() * readyToExplode.length)];
       _addMass(board, r, c, 'blue');
       return;
     }
-
-    // Si no hay a punto de explotar, expandir una propia
     const own = _getCells(board, 'blue');
     if (own.length) {
       const [r, c] = own[Math.floor(Math.random() * own.length)];
@@ -190,7 +183,6 @@ function _botMove(board) {
     }
   } 
 
-  // 35%: Movimiento Sub-óptimo o buscar casillas libres
   const ownLow = _getCells(board, 'blue').filter(c => board[c[0]][c[1]].mass <= 1);
   const free = _getEmptyCells(board);
   const pool = [...ownLow, ...free];
@@ -199,25 +191,24 @@ function _botMove(board) {
     const [r, c] = pool[Math.floor(Math.random() * pool.length)];
     _addMass(board, r, c, 'blue');
   } else {
-    _passTurn(); // Si no hay dónde jugar
+    _passTurn(); 
   }
 }
 
 // ── CHECK GAME OVER ───────────────────────────────────
-
 function _checkGameOver(board) {
-  let pink = 0, blue = 0, neutral = 0;
+  let pink = 0, blue = 0;
   for (let r = 0; r < GAME_CFG.BOARD_SIZE; r++) {
     for (let c = 0; c < GAME_CFG.BOARD_SIZE; c++) {
       if (board[r][c].blocked) continue;
       if (board[r][c].owner === 'pink') pink++;
       else if (board[r][c].owner === 'blue') blue++;
-      else neutral++;
     }
   }
 
-  // Si alguien se queda sin casillas
-  if (neutral < (GAME_CFG.BOARD_SIZE * GAME_CFG.BOARD_SIZE)) { // Evita game over en el primer turno
+  // ⚡ LA SOLUCIÓN: La regla de muerte súbita solo aplica desde la Ronda 2
+  // (cuando ambos jugadores ya tuvieron la oportunidad de poner fichas)
+  if (_turnCount >= 2) {
      if (pink === 0 && blue > 0) { _finishGame('blue'); return true; }
      if (blue === 0 && pink > 0) { _finishGame('pink'); return true; }
   }
