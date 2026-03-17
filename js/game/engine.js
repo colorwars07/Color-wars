@@ -8,7 +8,7 @@
 import { getNeighbors }   from '../core/app.js';
 import { getSupabase }    from '../core/supabase.js';
 import {
-  getState, updateGameBoard, setGamePhase2,
+  updateGameBoard, setGamePhase2,
   tickGame, setGameOver, clearGame,
   recordWin, recordLoss,
   getProfile, setView, GAME_CFG,
@@ -52,6 +52,7 @@ export function playerClick(row, col) {
 
   if (game.phase === 2) {
     if (cell.blocked) return;
+    // Can click own cell OR empty cell (to claim)
     if (cell.owner === 'blue') return;
     _addMass(game.board, row, col, 'pink');
     _onRender?.();
@@ -75,6 +76,7 @@ function _startPhase1Timer() {
     const game = getState('currentGame');
     if (!game) return;
 
+    // Bot places its piece at second 5
     if (elapsed === 5) {
       _botPhase1Move(game.board);
       _onRender?.();
@@ -135,6 +137,7 @@ function _botPhase2Move(board) {
 
   if (roll <= GAME_CFG.BOT_SKILL) {
     // ── Optimal (65%) ─────────────────────────────────
+    // Priority 1: own cells with mass 3 (about to explode)
     const readyToExplode = _getCellsByOwner(board, 'blue')
       .filter(([r,c]) => board[r][c].mass === GAME_CFG.EXPLODE_AT - 1);
 
@@ -144,6 +147,7 @@ function _botPhase2Move(board) {
       return;
     }
 
+    // Priority 2: corner/edge own cells
     const edgeCells = _getCellsByOwner(board, 'blue')
       .filter(([r,c]) => !board[r][c].blocked && (r===0||r===4||c===0||c===4));
 
@@ -153,6 +157,7 @@ function _botPhase2Move(board) {
       return;
     }
 
+    // Priority 3: any own cell
     const own = _getCellsByOwner(board, 'blue').filter(([r,c]) => !board[r][c].blocked);
     if (own.length) {
       const [r,c] = own[Math.floor(Math.random()*own.length)];
@@ -160,10 +165,12 @@ function _botPhase2Move(board) {
       return;
     }
 
+    // Fallback: claim empty cell
     _botClaimEmpty(board);
 
   } else {
     // ── Sub-optimal (35%) ─────────────────────────────
+    // Claim random empty cell OR pick a random low-mass own cell
     const own = _getCellsByOwner(board, 'blue').filter(([r,c]) => !board[r][c].blocked && board[r][c].mass <= 1);
     const free = [];
     for (let r = 0; r < GAME_CFG.BOARD_SIZE; r++)
@@ -191,6 +198,7 @@ function _botClaimEmpty(board) {
 }
 
 // ── BOARD MUTATIONS ────────────────────────────────────
+
 function _placePiece(board, row, col, color) {
   board[row][col].owner = color;
   board[row][col].mass  = 1;
@@ -200,7 +208,10 @@ function _addMass(board, row, col, color) {
   const cell = board[row][col];
   if (cell.blocked) return;
 
+  // If empty, claim it
   if (!cell.owner) cell.owner = color;
+
+  // If enemy, invade it
   if (cell.owner !== color) cell.owner = color;
 
   cell.mass++;
@@ -213,6 +224,7 @@ function _addMass(board, row, col, color) {
 }
 
 function _explode(board, row, col, color) {
+  // Reset exploding cell
   board[row][col].mass    = 0;
   board[row][col].owner   = null;
   board[row][col].blocked = true;
@@ -229,6 +241,7 @@ function _explode(board, row, col, color) {
       const nb = freshGame.board[nr][nc];
       if (nb.blocked) return;
 
+      // Propagate invasion
       nb.owner = color;
       nb.mass++;
 
@@ -244,12 +257,13 @@ function _explode(board, row, col, color) {
 }
 
 // ── GAME OVER ──────────────────────────────────────────
+
 function _checkGameOver(board) {
   const game = getState('currentGame');
   if (!game || game.isOver || game.phase !== 2) return;
 
   const { pink, blue, neutral } = _countCells(board);
-  if (neutral > 0) return; 
+  if (neutral > 0) return; // still live cells
 
   if (pink === 0) { _clearTimers(); _finishGame('blue'); }
   else if (blue === 0) { _clearTimers(); _finishGame('pink'); }
@@ -278,6 +292,7 @@ async function _finishGame(winner) {
 }
 
 // ── Helpers ────────────────────────────────────────────
+
 function _countCells(board) {
   let pink = 0, blue = 0, neutral = 0;
   for (let r = 0; r < GAME_CFG.BOARD_SIZE; r++)
@@ -305,14 +320,20 @@ function _clearTimers() {
 }
 
 function getState(key) {
+  // Access state module (imported at top of module)
   return _stateCache[key];
 }
 
+// ── State cache bridge ────────────────────────────────
+// engine.js needs to read currentGame synchronously from state.
+// We subscribe once and keep a local mirror.
 import { subscribe, getGame } from '../core/state.js';
+
 const _stateCache = { currentGame: null };
 
 subscribe('currentGame', (val) => { _stateCache.currentGame = val; });
 
+// Initialize cache with current value
 (function initCache() {
   _stateCache.currentGame = getGame();
 })();
