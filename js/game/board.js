@@ -5,13 +5,13 @@
  * ═══════════════════════════════════════════════════════
  */
 import { registerView, showToast } from '../core/app.js';
-import { getState, setView, GAME_CFG } from '../core/state.js';
+import { getGame, setView, GAME_CFG } from '../core/state.js';
 import { playerClick, startEngine, stopEngine, getCellCounts } from './engine.js';
 
 registerView('game', initGameView);
 
 export async function initGameView($container) {
-  const game = getState('currentGame');
+  const game = getGame();
   if (!game) { setView('dashboard'); return; }
 
   renderBoard($container, game);
@@ -57,7 +57,7 @@ function renderBoard($c, game) {
 }
 
 function updateBoardDOM($c) {
-  const game = getState('currentGame');
+  const game = getGame();
   if (!game) return;
 
   const cells = $c.querySelectorAll('.cell');
