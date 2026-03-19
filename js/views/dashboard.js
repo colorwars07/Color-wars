@@ -384,7 +384,7 @@ function openWithdrawModal() {
   document.getElementById('btn-wd-submit')?.addEventListener('click', submitWithdraw);
 }
 
-// ⚡ LÓGICA DE RETIRO BLINDADA (Cero robos)
+// ⚡ LÓGICA DE RETIRO BLINDADA (Igual a Recargas, cero errores)
 async function submitWithdraw() {
   const amount = parseFloat(document.getElementById('wd-amount')?.value);
   const bank   = document.getElementById('wd-bank')?.value.trim();
@@ -409,28 +409,23 @@ async function submitWithdraw() {
   const sb = getSupabase();
 
   try {
-    // 1. PRIMERO INTENTAMOS GUARDAR EL RECIBO EN LA BASE DE DATOS
-    const { data: wdData, error: insertErr } = await sb.from('withdrawals').insert({
+    // 1. Guardamos el recibo (SIN PEDIR COPIA DE VUELTA para que Supabase no tranque)
+    const { error: insertErr } = await sb.from('withdrawals').insert({
       user_email: profile.email || 'Jugador',
       amount_bs: amount,
       bank: bank,
       phone: phone,
       ci: ci,
       status: 'pending'
-    }).select().single();
+    });
 
-    // Si la base de datos falla, lanzamos error y NO DESCONTAMOS NADA.
-    if (insertErr) throw new Error("Error de conexión al guardar el recibo. No se descontó saldo.");
+    if (insertErr) throw new Error("Error en Supabase: " + insertErr.message);
 
-    // 2. SI EL RECIBO SE GUARDÓ PERFECTO, AHORA SÍ DESCONTAMOS EL SALDO
+    // 2. Si se guardó, descontamos la plata
     const newBalance = bs - amount;
     const { error: updateErr } = await sb.from('users').update({ wallet_bs: newBalance }).eq('id', profile.id);
 
-    if (updateErr) {
-      // Si por alguna locura el internet se cae aquí, borramos el recibo para que el admin no lo vea y no pague de gratis
-      await sb.from('withdrawals').delete().eq('id', wdData.id);
-      throw new Error("Error de conexión al descontar saldo. Operación cancelada.");
-    }
+    if (updateErr) throw new Error("Error descontando saldo: " + updateErr.message);
 
     hideModal();
     showToast(`Retiro de ${amount.toLocaleString('es-VE')} Bs en proceso.`, 'info', 6000);
@@ -439,7 +434,7 @@ async function submitWithdraw() {
     setView('dashboard');
 
   } catch (error) {
-    console.error("Falla de seguridad prevenida en retiro:", error);
+    console.error("Error en retiro:", error);
     $err.textContent = 'Error procesando el retiro. Tu dinero está a salvo. Intenta de nuevo.';
   } finally {
     $btn.disabled = false; $btn.textContent = 'SOLICITAR RETIRO'; $btn.style.opacity = '1';
