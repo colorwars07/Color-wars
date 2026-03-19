@@ -1,7 +1,7 @@
 /**
  * ═══════════════════════════════════════════════════════
  * COLOR WARS — js/views/matchmaking.js
- * VERSIÓN DE RESCATE (ESTABLE - SOLO BOT ALTERNANTE)
+ * MULTIJUGADOR REAL CORREGIDO (ROSADO VS AZUL) + BOT
  * ═══════════════════════════════════════════════════════
  */
 import { registerView, showToast } from '../core/app.js';
@@ -12,8 +12,10 @@ registerView('matchmaking', initMatchmaking);
 
 let _searchTimer = null;
 let _countdownTimer = null;
+let _matchChannel = null;   
+let _currentMatchId = null; 
 
-// La mega lista secreta de rivales criollos (300)
+// La lista de 300 nombres venezolanos
 const VZLA_NAMES = [
   "Adriana Colmenares", "La Catira", "La Flaca", "El Brayan", "Yuridia", "La Gocha", "El Chino", "Yulitza Uzcátegui",
   "El Menor", "La Chama", "Junior", "El Barbero", "Maikol Jackson", "La Doña", "El Gordo", "Yuleisi",
@@ -65,8 +67,9 @@ export async function initMatchmaking($container) {
     return;
   }
 
+  _currentMatchId = null;
   renderSearchScreen($container);
-  startSearch($container);
+  startSearch($container, profile);
 }
 
 function renderSearchScreen($c) {
@@ -84,56 +87,151 @@ function renderSearchScreen($c) {
   $c.querySelector('#btn-cancel-search').addEventListener('click', cancelSearch);
 }
 
-function startSearch($c) {
-  _searchTimer = setTimeout(() => {
-    setupBotMatch($c);
-  }, 35000); 
+async function startSearch($c, profile) {
+  const sb = getSupabase();
+
+  try {
+    // 1. Cobrar entrada por adelantado
+    const newBalance = Number(profile.wallet_bs) - 200;
+    await sb.from('users').update({ wallet_bs: newBalance }).eq('id', profile.id);
+    setProfile({ ...profile, wallet_bs: newBalance });
+
+    // 2. Buscar si alguien más está esperando en Supabase (Usamos profile.id, NO email)
+    const { data: waitingMatch, error: searchErr } = await sb
+      .from('matches')
+      .select('*')
+      .eq('status', 'waiting')
+      .neq('player_pink', profile.id) // No unirse a sí mismo
+      .limit(1)
+      .maybeSingle();
+
+    if (searchErr) throw searchErr;
+
+    if (waitingMatch) {
+      // 3A. ¡ENCONTRÉ A ALGUIEN! El que llega de segundo es el AZUL.
+      await sb.from('matches').update({
+        player_blue: profile.id,
+        status: 'playing'
+      }).eq('id', waitingMatch.id);
+
+      window.CW_SESSION = {
+        isBotMatch: false,
+        matchId: waitingMatch.id,
+        myColor: 'blue',
+        rivalName: "HUMANO",
+        board: Array(5).fill(null).map(() => Array(5).fill(null).map(() => ({ owner: null, mass: 0 })))
+      };
+
+      renderCountdownScreen($c, "HUMANO ENCONTRADO", "ERES EL AZUL - Juegas de segundo");
+      startCountdown($c);
+
+    } else {
+      // 3B. NO HAY NADIE. Yo creo la sala, me toca ser el ROSADO y jugar de primero.
+      const { data: newMatch, error: insertErr } = await sb.from('matches').insert([{
+        player_pink: profile.id,
+        status: 'waiting'
+      }]).select().single();
+
+      if (insertErr) throw insertErr;
+      _currentMatchId = newMatch.id;
+
+      // 4. Conectar el Cable de Supabase y sentarse a esperar
+      _matchChannel = sb.channel(`match_${newMatch.id}`)
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches', filter: `id=eq.${newMatch.id}` }, (payload) => {
+          if (payload.new.status === 'playing' && payload.new.player_blue !== 'BOT') {
+            // ¡OTRO HUMANO ENTRÓ A MI SALA!
+            clearTimeout(_searchTimer);
+            sb.removeChannel(_matchChannel); 
+
+            window.CW_SESSION = {
+              isBotMatch: false,
+              matchId: newMatch.id,
+              myColor: 'pink',
+              rivalName: "HUMANO",
+              board: Array(5).fill(null).map(() => Array(5).fill(null).map(() => ({ owner: null, mass: 0 })))
+            };
+
+            renderCountdownScreen($c, "HUMANO ENCONTRADO", "ERES EL ROSADO - Empiezas tú");
+            startCountdown($c);
+          }
+        })
+        .subscribe();
+
+      // 5. Encender reloj de 35 segundos para el Bot
+      _searchTimer = setTimeout(() => {
+        setupBotMatchFallback($c, profile);
+      }, 35000);
+    }
+  } catch (err) {
+    console.error("Error buscando partida:", err);
+    showToast('Error de conexión', 'error');
+    setView('dashboard');
+  }
 }
 
-function cancelSearch() {
+async function cancelSearch() {
   clearTimeout(_searchTimer);
   clearTimeout(_countdownTimer);
+  
+  const sb = getSupabase();
+  const profile = getProfile();
+
+  if (_matchChannel) {
+    sb.removeChannel(_matchChannel);
+  }
+
+  // REEMBOLSO SI CANCELA MIENTRAS ESPERABA
+  if (_currentMatchId) {
+    try {
+      const newBalance = Number(profile.wallet_bs) + 200; 
+      await sb.from('users').update({ wallet_bs: newBalance }).eq('id', profile.id);
+      setProfile({ ...profile, wallet_bs: newBalance });
+      
+      await sb.from('matches').update({ status: 'cancelled' }).eq('id', _currentMatchId);
+    } catch(e) { console.error("Error reembolsando:", e); }
+  }
+  
+  _currentMatchId = null;
   setView('dashboard');
 }
 
-async function setupBotMatch($c) {
+// PLAN B: EL BOT VENEZOLANO
+async function setupBotMatchFallback($c, profile) {
   const sb = getSupabase();
-  const profile = getProfile();
-  
-  try {
-    const { data: userData, error } = await sb.from('users').select('bot_next_win').eq('id', profile.id).single();
-    if (error) throw error;
-    
-    const humanWinsNext = userData.bot_next_win; 
-    
-    const newBalance = Number(profile.wallet_bs) - 200;
-    await sb.from('users').update({ 
-        wallet_bs: newBalance,
-        bot_next_win: !humanWinsNext 
-    }).eq('id', profile.id);
-    
-    setProfile({ ...profile, wallet_bs: newBalance });
+  if (_matchChannel) sb.removeChannel(_matchChannel);
 
+  try {
+    const { data: userData } = await sb.from('users').select('bot_next_win').eq('id', profile.id).single();
+    const humanWinsNext = userData ? userData.bot_next_win : false; 
+    
+    await sb.from('users').update({ bot_next_win: !humanWinsNext }).eq('id', profile.id);
+    
     const randomName = VZLA_NAMES[Math.floor(Math.random() * VZLA_NAMES.length)];
+    if (_currentMatchId) {
+      await sb.from('matches').update({
+        player_blue: 'BOT',
+        status: 'playing'
+      }).eq('id', _currentMatchId);
+    }
 
     window.CW_SESSION = {
       isBotMatch: true,
       botName: randomName,
       humanWinsNext: humanWinsNext, 
+      myColor: 'pink',
       board: Array(5).fill(null).map(() => Array(5).fill(null).map(() => ({ owner: null, mass: 0 })))
     };
 
-    renderCountdownScreen($c, randomName);
+    renderCountdownScreen($c, randomName, "ERES EL ROSADO - Empiezas tú");
     startCountdown($c);
     
   } catch (err) {
-    console.error("Error en matchmaking:", err);
-    showToast('Error de conexión con el servidor', 'error');
+    console.error("Error fallback bot:", err);
     setView('dashboard');
   }
 }
 
-function renderCountdownScreen($c, rivalName) {
+function renderCountdownScreen($c, rivalName, instruction) {
   $c.innerHTML = `
   <div class="mm-screen">
     <div style="display:flex; flex-direction:column; align-items:center; gap:1.5rem;">
@@ -143,6 +241,7 @@ function renderCountdownScreen($c, rivalName) {
       <div style="text-align:center;">
         <h2 style="font-family:var(--font-display); font-size:1.4rem; color:var(--text-bright); margin-bottom:0.5rem;">¡RIVAL ENCONTRADO!</h2>
         <p style="color:var(--blue); font-weight:bold; font-size:1.2rem; text-transform:uppercase;">${rivalName}</p>
+        <p style="color:var(--pink); font-size:0.9rem; margin-top:10px; font-weight:bold;">${instruction}</p>
       </div>
     </div>
   </div>`;
