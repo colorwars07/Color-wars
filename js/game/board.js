@@ -1,7 +1,7 @@
 /**
  * ═══════════════════════════════════════════════════════
  * COLOR WARS — js/game/board.js
- * MONOLITO: Tablero + Bot Inteligente/Alternante
+ * MONOLITO: Tablero + IA Estratégica (100% Legal)
  * ═══════════════════════════════════════════════════════
  */
 
@@ -40,7 +40,6 @@ export async function initGameView($container) {
 }
 
 function renderHTML() {
-  // Leemos el nombre del rival (o ponemos BOT si por alguna razón falla)
   const rivalName = window.CW_SESSION.botName || 'BOT';
 
   _$container.innerHTML = `
@@ -114,8 +113,9 @@ function handlePlayerClick(row, col) {
     }
   }
 
+  // REGLA CLAVE: Si ya tienes casillas, SOLO puedes tocar las tuyas.
   if (myCellsCount > 0 && cell.owner !== 'pink') {
-    return; // Candado: No puede tocar casillas vacías si ya tiene suyas
+    return; 
   }
 
   clearInterval(_turnTimer);
@@ -203,63 +203,76 @@ async function _explode(row, col, color) {
   }
 }
 
-// ⚡ LÓGICA DE BOT ALTERNANTE (Diablo vs Tonto)
+// ⚡ LÓGICA DE BOT: IA ESTRATÉGICA (100% LEGAL, CERO TRAMPAS)
 function _botMove() {
   const board = window.CW_SESSION.board;
   const humanWinsNext = window.CW_SESSION.humanWinsNext; 
   
-  let botCellsCount = 0;
+  // 1. Recopilar todas las casillas que le pertenecen al Bot
+  const botCells = [];
   for (let r = 0; r < BOARD_SIZE; r++) {
     for (let c = 0; c < BOARD_SIZE; c++) {
-      if (board[r][c].owner === 'blue') botCellsCount++;
+      if (board[r][c].owner === 'blue') botCells.push({r, c, mass: board[r][c].mass});
     }
   }
 
-  // --- MODO DIABLO (El bot te quiere masacrar) ---
-  if (humanWinsNext === false) {
-    // 1. Buscar explotar (Masa 3)
-    const ready = [];
-    for(let r=0; r<BOARD_SIZE; r++) for(let c=0; c<BOARD_SIZE; c++) if(board[r][c].owner === 'blue' && board[r][c].mass === 3) ready.push({r,c});
-    if (ready.length) {
-      const move = ready[Math.floor(Math.random() * ready.length)];
-      _addMass(move.r, move.c, 'blue');
-      return;
-    }
-    // 2. Engordar casillas
-    const build = [];
-    for(let r=0; r<BOARD_SIZE; r++) for(let c=0; c<BOARD_SIZE; c++) if(board[r][c].owner === 'blue' && board[r][c].mass > 0) build.push({r,c});
-    if (build.length) {
-      const move = build[Math.floor(Math.random() * build.length)];
-      _addMass(move.r, move.c, 'blue');
-      return;
-    }
-  } 
-  
-  // --- MODO TONTO (El bot te deja ganar) O MODO INICIO ---
-  const pool = [];
-  for(let r=0; r<BOARD_SIZE; r++) {
-    for(let c=0; c<BOARD_SIZE; c++) {
-      if (botCellsCount === 0 && !board[r][c].owner) {
-         pool.push({r,c});
-      } else if (board[r][c].owner === 'blue') {
-         pool.push({r,c});
+  // Si es el primer turno del Bot (no tiene casillas), agarra una vacía
+  if (botCells.length === 0) {
+    const emptyPool = [];
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        if (!board[r][c].owner) emptyPool.push({r, c});
       }
     }
+    if (emptyPool.length > 0) {
+        const startMove = emptyPool[Math.floor(Math.random() * emptyPool.length)];
+        _addMass(startMove.r, startMove.c, 'blue');
+    } else {
+        _passTurn();
+    }
+    return;
   }
 
-  if (pool.length) {
-    // Si está en Modo Tonto, evita explotar casillas si es posible
-    if (humanWinsNext === true && botCellsCount > 0) {
-        const dumbPool = pool.filter(p => board[p.r][p.c].mass < 3);
-        const finalPool = dumbPool.length > 0 ? dumbPool : pool;
-        const move = finalPool[Math.floor(Math.random() * finalPool.length)];
-        _addMass(move.r, move.c, 'blue');
-    } else {
-        const move = pool[Math.floor(Math.random() * pool.length)];
-        _addMass(move.r, move.c, 'blue');
+  // --- MODO DIABLO: JUEGA A MATAR (Lógica Estratégica) ---
+  if (humanWinsNext === false) {
+    // Prioridad 1: ¡Disparar! Tocar las de masa 3 para generar explosiones
+    const readyToExplode = botCells.filter(cell => cell.mass === 3);
+    if (readyToExplode.length > 0) {
+      const move = readyToExplode[Math.floor(Math.random() * readyToExplode.length)];
+      _addMass(move.r, move.c, 'blue');
+      return;
     }
-  } else {
-    _passTurn();
+    
+    // Prioridad 2: ¡Cargar el arma! Tocar las de masa 2 para llevarlas a 3
+    const massTwo = botCells.filter(cell => cell.mass === 2);
+    if (massTwo.length > 0) {
+      const move = massTwo[Math.floor(Math.random() * massTwo.length)];
+      _addMass(move.r, move.c, 'blue');
+      return;
+    }
+
+    // Prioridad 3: Expandir lo que queda (masa 1)
+    const move = botCells[Math.floor(Math.random() * botCells.length)];
+    _addMass(move.r, move.c, 'blue');
+    return;
+  } 
+  
+  // --- MODO TONTO: JUEGA A PERDER (Pero respetando las reglas) ---
+  if (humanWinsNext === true) {
+    // Busca sus propias casillas, pero EVITA las que están a punto de explotar
+    const safeCells = botCells.filter(cell => cell.mass < 3);
+
+    if (safeCells.length > 0) {
+      // Engorda pendejamente las que no hacen daño
+      const move = safeCells[Math.floor(Math.random() * safeCells.length)];
+      _addMass(move.r, move.c, 'blue');
+      return;
+    } else {
+      // Si TODAS sus casillas son de 3 bolitas (acorralado), no le queda otra que tocar una
+      const move = botCells[Math.floor(Math.random() * botCells.length)];
+      _addMass(move.r, move.c, 'blue');
+      return;
+    }
   }
 }
 
