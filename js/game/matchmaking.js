@@ -1,7 +1,7 @@
 /**
  * ═══════════════════════════════════════════════════════
  * COLOR WARS — js/views/matchmaking.js
- * MATCHMAKING REAL + BOT VENEZOLANO ALTERNANTE (300 NOMBRES)
+ * VERSIÓN DE RESCATE (ESTABLE - SOLO BOT ALTERNANTE)
  * ═══════════════════════════════════════════════════════
  */
 import { registerView, showToast } from '../core/app.js';
@@ -85,7 +85,6 @@ function renderSearchScreen($c) {
 }
 
 function startSearch($c) {
-  // Busca por 35 segundos exactos, luego manda el Bot
   _searchTimer = setTimeout(() => {
     setupBotMatch($c);
   }, 35000); 
@@ -105,10 +104,8 @@ async function setupBotMatch($c) {
     const { data: userData, error } = await sb.from('users').select('bot_next_win').eq('id', profile.id).single();
     if (error) throw error;
     
-    // Si bot_next_win es true, al humano le toca ganar. Si es false, le toca perder.
     const humanWinsNext = userData.bot_next_win; 
     
-    // Descontar saldo y alternar el interruptor para la próxima
     const newBalance = Number(profile.wallet_bs) - 200;
     await sb.from('users').update({ 
         wallet_bs: newBalance,
@@ -117,10 +114,8 @@ async function setupBotMatch($c) {
     
     setProfile({ ...profile, wallet_bs: newBalance });
 
-    // Elegir el nombre venezolano al azar
     const randomName = VZLA_NAMES[Math.floor(Math.random() * VZLA_NAMES.length)];
 
-    // Cargar la sesión indicando qué comportamiento debe tener el Bot
     window.CW_SESSION = {
       isBotMatch: true,
       botName: randomName,
