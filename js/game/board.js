@@ -1,7 +1,7 @@
 /**
  * ═══════════════════════════════════════════════════════
  * COLOR WARS — js/game/board.js
- * MONOLITO: MULTIJUGADOR + LIMPIEZA VISUAL + CERO BUCLES
+ * MONOLITO: MULTIJUGADOR + FIN DE BUCLE INFINITO
  * ═══════════════════════════════════════════════════════
  */
 
@@ -121,7 +121,7 @@ function updateDOM() {
   const game = window.CW_SESSION;
   const cells = _$container.querySelectorAll('.cell');
   
-  if(cells.length === 0) return; // Por si el tablero ya se borró
+  if(cells.length === 0) return; 
 
   let pinkScore = 0, blueScore = 0;
   let idx = 0;
@@ -203,12 +203,8 @@ function _startTurn() {
       _totalWait = 40; 
       _graceTimer = setInterval(() => {
         _totalWait--;
-        
-        if (_totalWait <= 30) {
-           updateTimerUI(_totalWait); 
-        } else {
-           updateTimerUI(); 
-        }
+        if (_totalWait <= 30) updateTimerUI(_totalWait); 
+        else updateTimerUI(); 
 
         if (_totalWait <= 0) {
            clearInterval(_graceTimer);
@@ -410,9 +406,9 @@ function _checkGameOver() {
   return false;
 }
 
-// ⚡ LÓGICA BLINDADA: Cero doble ejecución, limpia la pantalla completa
+// ⚡ LÓGICA BLINDADA: AHORA SÍ CIERRA EL BUCLE DEL BOT Y DEL HUMANO
 async function _finishGame(winnerColor, fromDB = false) {
-  if (!_active) return; // CANDADO: Si ya terminó, aborta inmediatamente
+  if (!_active) return; 
   _active = false;
   
   clearInterval(_turnTimer);
@@ -426,7 +422,9 @@ async function _finishGame(winnerColor, fromDB = false) {
     const profile = getProfile();
     const sb = getSupabase();
 
-    if (!fromDB && !window.CW_SESSION.isBotMatch && window.CW_SESSION.matchId) {
+    // 🔥 LA SOLUCIÓN: Quitamos el candado que ignoraba al Bot. 
+    // Ahora le avisa a Supabase que TODO terminó.
+    if (!fromDB && window.CW_SESSION.matchId) {
        await sb.from('matches').update({ 
            status: 'finished', 
            winner: winnerColor,
@@ -447,7 +445,6 @@ async function _finishGame(winnerColor, fromDB = false) {
 
   } catch (e) { console.error("Error al finalizar:", e); }
 
-  // ⚡ DESTRUIMOS LA ARENA Y DEJAMOS SOLO EL CARTEL DE RESULTADO LÍMPIO
   _$container.innerHTML = `
     <div class="result-screen" style="display:flex; flex-direction:column; justify-content:center; align-items:center; height:100vh; width: 100%; background:var(--bg-dark); position: absolute; top: 0; left: 0; z-index: 999;">
       <h1 class="result-title ${win ? 'result-win' : 'result-lose'}">${win ? '¡VICTORIA!' : 'DERROTA'}</h1>
@@ -459,7 +456,6 @@ async function _finishGame(winnerColor, fromDB = false) {
   `;
   
   _$container.querySelector('#btn-exit').addEventListener('click', () => {
-    // ⚡ VACIAR LA MEMORIA ANTES DE VOLVER AL MENÚ
     window.CW_SESSION = null; 
     setView('dashboard');
   });
