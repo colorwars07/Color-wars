@@ -1,7 +1,7 @@
 /**
  * ═══════════════════════════════════════════════════════
  * COLOR WARS — js/game/board.js
- * TABLERO DEFINITIVO: GUARDADO EN NUBE + 30s DE GRACIA
+ * MONOLITO: MULTIJUGADOR + LIMPIEZA VISUAL + CERO BUCLES
  * ═══════════════════════════════════════════════════════
  */
 
@@ -39,10 +39,8 @@ export async function initGameView($container) {
 
   const sb = getSupabase();
 
-  // ⚡ SI ES MULTIJUGADOR, RECUPERAMOS EL TABLERO DE LA BASE DE DATOS Y CONECTAMOS EL CABLE
   if (!window.CW_SESSION.isBotMatch && window.CW_SESSION.matchId) {
     
-    // 1. Verificamos cómo está la partida en Supabase al entrar
     try {
       const { data: matchData } = await sb.from('matches').select('*').eq('id', window.CW_SESSION.matchId).single();
       if (matchData) {
@@ -51,18 +49,15 @@ export async function initGameView($container) {
       }
     } catch(e) { console.error("Error cargando tablero:", e); }
 
-    // 2. Nos suscribimos a los cambios oficiales en la tabla
     _matchChannel = sb.channel(`game_${window.CW_SESSION.matchId}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches', filter: `id=eq.${window.CW_SESSION.matchId}` }, (payload) => {
         const newData = payload.new;
         
-        // Si alguien ganó o se rindió por Supabase
         if (newData.status === 'finished' || newData.status === 'cancelled') {
            if (newData.winner) _finishGame(newData.winner, true);
            return;
         }
 
-        // Si el rival hizo una jugada y pasó el turno, actualizamos nuestro tablero
         if (newData.current_turn === window.CW_SESSION.myColor && _currentTurn !== window.CW_SESSION.myColor) {
            window.CW_SESSION.board = newData.board_state;
            _currentTurn = newData.current_turn;
@@ -89,7 +84,7 @@ function renderHTML() {
   const rivalColorVar = myColor === 'pink' ? 'var(--blue)' : 'var(--pink)';
 
   _$container.innerHTML = `
-  <div class="game-arena">
+  <div class="game-arena" id="arena-main">
     <div class="game-hud">
       <div style="color:${youColorVar};font-weight:900;font-size:1rem;text-shadow:0 0 10px ${youColorVar}; text-transform:uppercase;">
         ${youText}: <span id="score-you">0</span>
@@ -116,7 +111,6 @@ function renderHTML() {
   });
 
   _$container.querySelector('#btn-surrender').addEventListener('click', () => {
-    // Si te rindes, le das la victoria al otro
     const rivalColor = window.CW_SESSION.myColor === 'pink' ? 'blue' : 'pink';
     _finishGame(rivalColor);
   });
@@ -126,6 +120,9 @@ function updateDOM() {
   if (!_active) return;
   const game = window.CW_SESSION;
   const cells = _$container.querySelectorAll('.cell');
+  
+  if(cells.length === 0) return; // Por si el tablero ya se borró
+
   let pinkScore = 0, blueScore = 0;
   let idx = 0;
 
@@ -146,11 +143,15 @@ function updateDOM() {
 
   const myColor = window.CW_SESSION.myColor || 'pink';
   if (myColor === 'pink') {
-    _$container.querySelector('#score-you').textContent = pinkScore;
-    _$container.querySelector('#score-rival').textContent = blueScore;
+    const sYou = _$container.querySelector('#score-you');
+    const sRiv = _$container.querySelector('#score-rival');
+    if(sYou) sYou.textContent = pinkScore;
+    if(sRiv) sRiv.textContent = blueScore;
   } else {
-    _$container.querySelector('#score-you').textContent = blueScore;
-    _$container.querySelector('#score-rival').textContent = pinkScore;
+    const sYou = _$container.querySelector('#score-you');
+    const sRiv = _$container.querySelector('#score-rival');
+    if(sYou) sYou.textContent = blueScore;
+    if(sRiv) sRiv.textContent = pinkScore;
   }
 }
 
@@ -189,37 +190,32 @@ function _startTurn() {
   const myColor = window.CW_SESSION.myColor || 'pink';
 
   if (_currentTurn === myColor) {
-    // ⚡ MI TURNO: Corre el reloj de 10 segundos
     _turnTimer = setInterval(() => {
       _timeLeft--;
       updateTimerUI();
       if (_timeLeft <= 0) {
         clearInterval(_turnTimer);
-        _passTurn(); // Pierdo el turno por lento
+        _passTurn(); 
       }
     }, 1000);
   } else {
-    // ⚡ TURNO DEL RIVAL
     if (!window.CW_SESSION.isBotMatch) {
-      // MODO MULTIJUGADOR: Damos 10s normales + 30s de gracia = 40s total
       _totalWait = 40; 
       _graceTimer = setInterval(() => {
         _totalWait--;
         
         if (_totalWait <= 30) {
-           updateTimerUI(_totalWait); // Muestra el reloj rojo de emergencia
+           updateTimerUI(_totalWait); 
         } else {
-           updateTimerUI(); // Muestra "ESPERANDO" normal
+           updateTimerUI(); 
         }
 
         if (_totalWait <= 0) {
-           // Se le acabó la gracia, declaro victoria por abandono
            clearInterval(_graceTimer);
            claimForfeitVictory(); 
         }
       }, 1000);
     } else {
-      // MODO BOT: El bot juega rapidito
       setTimeout(() => {
         if (!_active || _currentTurn !== 'blue') return;
         _botMove();
@@ -258,7 +254,6 @@ async function claimForfeitVictory() {
   const myColor = window.CW_SESSION.myColor || 'pink';
   const sb = getSupabase();
   
-  // Le avisamos a Supabase que el rival se fue y yo gané
   await sb.from('matches').update({
      status: 'finished',
      winner: myColor
@@ -276,10 +271,9 @@ async function _passTurn() {
      _currentTurn = nextTurn;
      _startTurn();
   } else {
-     // ⚡ GUARDAMOS EL TABLERO EN LA NUBE Y LE PASAMOS EL TURNO AL OTRO
      if (_currentTurn === window.CW_SESSION.myColor) {
         _currentTurn = nextTurn; 
-        updateTimerUI(); // Bloqueamos la pantalla rápido
+        updateTimerUI(); 
         
         const sb = getSupabase();
         await sb.from('matches').update({
@@ -334,7 +328,6 @@ async function _explode(row, col, color) {
   }
 }
 
-// LÓGICA DEL BOT (Se mantiene la IA Estratégica Legal)
 function _botMove() {
   const board = window.CW_SESSION.board;
   const humanWinsNext = window.CW_SESSION.humanWinsNext; 
@@ -409,14 +402,19 @@ function _checkGameOver() {
   }
   
   if (_turnCount >= 2) {
+     const myColor = window.CW_SESSION.myColor || 'pink';
+     
      if (pink === 0 && blue > 0) { _finishGame('blue'); return true; }
      if (blue === 0 && pink > 0) { _finishGame('pink'); return true; }
   }
   return false;
 }
 
+// ⚡ LÓGICA BLINDADA: Cero doble ejecución, limpia la pantalla completa
 async function _finishGame(winnerColor, fromDB = false) {
+  if (!_active) return; // CANDADO: Si ya terminó, aborta inmediatamente
   _active = false;
+  
   clearInterval(_turnTimer);
   clearInterval(_graceTimer);
   if (_matchChannel) _matchChannel.unsubscribe();
@@ -427,6 +425,14 @@ async function _finishGame(winnerColor, fromDB = false) {
   try {
     const profile = getProfile();
     const sb = getSupabase();
+
+    if (!fromDB && !window.CW_SESSION.isBotMatch && window.CW_SESSION.matchId) {
+       await sb.from('matches').update({ 
+           status: 'finished', 
+           winner: winnerColor,
+           board_state: window.CW_SESSION.board
+       }).eq('id', window.CW_SESSION.matchId);
+    }
     
     if (win) {
       const newBalance = Number(profile.wallet_bs) + 320;
@@ -439,18 +445,22 @@ async function _finishGame(winnerColor, fromDB = false) {
       setProfile({ ...profile, losses: newLosses });
     }
 
-    // ⚡ SOLO EL GANADOR actualiza la base de datos (para no cruzar cables)
-    if (win && !fromDB && !window.CW_SESSION.isBotMatch) {
-       await sb.from('matches').update({ status: 'finished', winner: myColor }).eq('id', window.CW_SESSION.matchId);
-    }
-  } catch (e) {}
+  } catch (e) { console.error("Error al finalizar:", e); }
 
-  _$container.innerHTML += `
-    <div class="result-screen">
+  // ⚡ DESTRUIMOS LA ARENA Y DEJAMOS SOLO EL CARTEL DE RESULTADO LÍMPIO
+  _$container.innerHTML = `
+    <div class="result-screen" style="display:flex; flex-direction:column; justify-content:center; align-items:center; height:100vh; width: 100%; background:var(--bg-dark); position: absolute; top: 0; left: 0; z-index: 999;">
       <h1 class="result-title ${win ? 'result-win' : 'result-lose'}">${win ? '¡VICTORIA!' : 'DERROTA'}</h1>
-      <p style="color:var(--text-dim);font-family:var(--font-mono);margin-bottom:2rem;">${win ? '+320 Bs acreditados' : 'Perdiste la batalla'}</p>
-      <button class="btn btn-primary" id="btn-exit">VOLVER AL INICIO</button>
+      <p style="color:var(--text-dim);font-family:var(--font-mono);margin-bottom:2rem; text-align:center;">
+        ${win ? '+320 Bs acreditados' : 'Perdiste la batalla'}
+      </p>
+      <button class="btn btn-primary" id="btn-exit" style="width:200px;">VOLVER AL INICIO</button>
     </div>
   `;
-  _$container.querySelector('#btn-exit').addEventListener('click', () => setView('dashboard'));
+  
+  _$container.querySelector('#btn-exit').addEventListener('click', () => {
+    // ⚡ VACIAR LA MEMORIA ANTES DE VOLVER AL MENÚ
+    window.CW_SESSION = null; 
+    setView('dashboard');
+  });
 }
