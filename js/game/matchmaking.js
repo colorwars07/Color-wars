@@ -1,7 +1,7 @@
 /**
  * ═══════════════════════════════════════════════════════
  * COLOR WARS — js/views/matchmaking.js
- * MULTIJUGADOR + EXTERMINADOR DE FANTASMAS + ECONOMÍA 30 CP
+ * MULTIJUGADOR + LÓGICA DE LIMPIEZA EN EL SERVIDOR (RPC)
  * ═══════════════════════════════════════════════════════
  */
 import { registerView, showToast } from '../core/app.js';
@@ -14,11 +14,11 @@ let _searchTimer = null;
 let _countdownTimer = null;
 let _matchChannel = null;   
 let _currentMatchId = null; 
-const ENTRY_FEE = 30; // ⚡ Economía actualizada
+const ENTRY_FEE = 30; // Economía blindada
 
 const VZLA_NAMES = [
-  "El Bryan", "La Catira", "El Menor", "Yuridia", "El Gocho", "La Chama", "Maikol", "Yuleisi",
-  "El Chino", "La Negra", "Juancho", "Dayana", "El Portugués", "Mariángel", "El Convive", "El Tuki"
+  "Maikol", "El Bryan", "La Catira", "Yuridia", "El Gocho", "La Chama", "Yuleisi",
+  "El Chino", "Juancho", "Dayana", "El Portugués", "El Convive"
 ];
 
 export async function initMatchmaking($container) {
@@ -34,19 +34,16 @@ export async function initMatchmaking($container) {
   _currentMatchId = null;
   renderSearchScreen($container);
   
-  // ⚡ EXTERMINADOR DE FANTASMAS (Evita bucles de partidas viejas)
-  await cleanupGhostMatches(profile.id);
+  // ⚡ ORDEN AL SERVIDOR: El celular ya no hace el trabajo pesado.
+  // Solo le pide a Supabase que ejecute la función nativa que creamos en SQL.
+  try {
+      const sb = getSupabase();
+      await sb.rpc('limpiar_fantasmas', { jugador_id: profile.id });
+  } catch (e) { 
+      console.error("Error contactando al limpiador del servidor:", e); 
+  }
 
   startSearch($container, profile);
-}
-
-// Mata cualquier partida que el jugador haya dejado abandonada antes de buscar una nueva
-async function cleanupGhostMatches(userId) {
-  const sb = getSupabase();
-  try {
-    await sb.from('matches').update({ status: 'cancelled' }).eq('player_pink', userId).in('status', ['waiting', 'playing']);
-    await sb.from('matches').update({ status: 'cancelled' }).eq('player_blue', userId).in('status', ['waiting', 'playing']);
-  } catch (e) { console.error("Error limpiando fantasmas:", e); }
 }
 
 function renderSearchScreen($c) {
@@ -89,7 +86,6 @@ async function startSearch($c, profile) {
     if (searchErr) throw searchErr;
 
     if (waitingMatch) {
-      // ENCONTRAMOS UN HUMANO
       await sb.from('matches').update({
         player_blue: profile.id,
         status: 'playing'
@@ -109,7 +105,6 @@ async function startSearch($c, profile) {
       startCountdown($c);
 
     } else {
-      // CREAMOS SALA DE ESPERA
       const { data: newMatch, error: insertErr } = await sb.from('matches').insert([{
         player_pink: profile.id,
         status: 'waiting'
@@ -141,7 +136,6 @@ async function startSearch($c, profile) {
         })
         .subscribe();
 
-      // Reloj para el Bot (35s)
       _searchTimer = setTimeout(() => {
         setupBotMatchFallback($c, profile);
       }, 35000);
@@ -153,7 +147,15 @@ async function startSearch($c, profile) {
   }
 }
 
-async function cancelSearch() {
+// ⚡ CANCELACIÓN REACTIVA (Celular rápido)
+function cancelSearch() {
+  const $btn = document.getElementById('btn-cancel-search');
+  if($btn) {
+      $btn.textContent = "CANCELANDO...";
+      $btn.style.opacity = '0.5';
+      $btn.style.pointerEvents = 'none';
+  }
+
   clearTimeout(_searchTimer);
   clearTimeout(_countdownTimer);
   
@@ -161,9 +163,7 @@ async function cancelSearch() {
   if (_matchChannel) sb.removeChannel(_matchChannel);
 
   if (_currentMatchId) {
-    try {
-      await sb.from('matches').update({ status: 'cancelled' }).eq('id', _currentMatchId);
-    } catch(e) { console.error("Error cancelando sala:", e); }
+    sb.from('matches').update({ status: 'cancelled' }).eq('id', _currentMatchId);
   }
   
   _currentMatchId = null;
@@ -178,6 +178,11 @@ async function setupBotMatchFallback($c, profile) {
     const { data: userData } = await sb.from('users').select('bot_next_win').eq('id', profile.id).single();
     const humanWinsNext = userData ? userData.bot_next_win : false; 
     
+    if(_currentMatchId) {
+        const {data: checkMatch} = await sb.from('matches').select('status').eq('id', _currentMatchId).single();
+        if(!checkMatch || checkMatch.status === 'cancelled') return; 
+    }
+
     await sb.from('users').update({ bot_next_win: !humanWinsNext }).eq('id', profile.id);
     
     const randomName = VZLA_NAMES[Math.floor(Math.random() * VZLA_NAMES.length)];
@@ -192,7 +197,7 @@ async function setupBotMatchFallback($c, profile) {
 
     window.CW_SESSION = {
       isBotMatch: true,
-      matchId: _currentMatchId, // Se mantiene para que el servidor pueda guardar todo
+      matchId: _currentMatchId,
       botName: randomName,
       humanWinsNext: humanWinsNext, 
       myColor: 'pink',
