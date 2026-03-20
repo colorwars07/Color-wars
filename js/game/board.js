@@ -1,12 +1,12 @@
 /**
  * ═══════════════════════════════════════════════════════
  * COLOR WARS — js/game/board.js
- * MONOLITO 100/100: MOTOR ASÍNCRONO "FIRE & FORGET" + IA SEGURA
+ * MONOLITO 100/100: PAGO ASEGURADO + IA BLINDADA
  * ═══════════════════════════════════════════════════════
  */
 
 import { registerView, showToast } from '../core/app.js';
-import { setView, getProfile, setProfile } from '../core/state.js';
+import { setView, getProfile, setProfile, reloadProfile } from '../core/state.js';
 import { getSupabase } from '../core/supabase.js';
 
 const BOARD_SIZE = 5;
@@ -261,18 +261,10 @@ function updateTimerUI(graceTime = null) {
 async function claimForfeitVictory() {
   if (!_active) return;
   const myColor = window.CW_SESSION.myColor || 'pink';
-  const sb = getSupabase();
-  
-  // Fire & Forget: No frenamos el juego por Supabase
-  sb.from('matches').update({
-     status: 'finished',
-     winner: myColor
-  }).eq('id', window.CW_SESSION.matchId);
-  
-  _finishGame(myColor, true);
+  _finishGame(myColor, false);
 }
 
-// ⚡ MOTOR ASÍNCRONO FIRE & FORGET
+// El pase de turno SÍ se queda en segundo plano para fluidez
 async function _passTurn() {
   if (!_active) return;
   _turnCount++;
@@ -284,8 +276,6 @@ async function _passTurn() {
      
      if (window.CW_SESSION.matchId) {
          const sb = getSupabase();
-         // ⚡ CIRUGÍA: Eliminado el 'await' que congelaba el juego. 
-         // El juego sigue corriendo al 100%, Supabase se actualiza en segundo plano.
          sb.from('matches').update({
             board_state: window.CW_SESSION.board,
             current_turn: nextTurn
@@ -425,6 +415,7 @@ function _checkGameOver() {
   return false;
 }
 
+// ⚡ LÓGICA DE PAGO 100% ASEGURADA (Cero Pérdida de Dinero)
 async function _finishGame(winnerColor, fromDB = false) {
   if (!_active) return; 
   _active = false;
@@ -435,19 +426,34 @@ async function _finishGame(winnerColor, fromDB = false) {
   
   const myColor = window.CW_SESSION.myColor || 'pink';
   const win = winnerColor === myColor;
+
+  // ⚡ 1. PANTALLA DE BLOQUEO: Evita que el usuario salga antes de que Supabase pague
+  _$container.innerHTML = `
+    <div class="result-screen" style="display:flex; flex-direction:column; justify-content:center; align-items:center; height:100vh; width: 100%; background:var(--bg-dark); position: absolute; top: 0; left: 0; z-index: 999;">
+      <h1 class="result-title" style="color:var(--text-dim); font-size: 1.4rem;">PROCESANDO RESULTADO...</h1>
+      <p style="color:var(--text-dim);font-family:var(--font-mono);margin-bottom:2rem; text-align:center;">
+        Asegurando conexión con el servidor
+      </p>
+    </div>
+  `;
   
   try {
     const sb = getSupabase();
     if (!fromDB && window.CW_SESSION.matchId) {
-       // Fire & Forget de victoria
-       sb.from('matches').update({ 
+       // ⚡ 2. AWAIT OBLIGATORIO: El código espera a que el Perro Guardián pague sí o sí
+       const { error } = await sb.from('matches').update({ 
            status: 'finished', 
            winner: winnerColor,
            board_state: window.CW_SESSION.board
        }).eq('id', window.CW_SESSION.matchId);
-    }
-  } catch (e) { console.error("Error al finalizar:", e); }
 
+       if (error) throw error;
+    }
+  } catch (e) { 
+    console.error("Error asegurando partida en Supabase:", e); 
+  }
+
+  // ⚡ 3. AHORA SÍ, SE MUESTRA EL BOTÓN DE SALIDA (El dinero ya está seguro en el banco)
   _$container.innerHTML = `
     <div class="result-screen" style="display:flex; flex-direction:column; justify-content:center; align-items:center; height:100vh; width: 100%; background:var(--bg-dark); position: absolute; top: 0; left: 0; z-index: 999;">
       <h1 class="result-title ${win ? 'result-win' : 'result-lose'}">${win ? '¡VICTORIA!' : 'DERROTA'}</h1>
@@ -459,6 +465,7 @@ async function _finishGame(winnerColor, fromDB = false) {
     </div>
   `;
   
+  // ⚡ 4. BOTÓN BLINDADO (No borra al ganador por si le das doble click)
   _$container.querySelector('#btn-exit').addEventListener('click', async () => {
     const $btn = _$container.querySelector('#btn-exit');
     const $err = _$container.querySelector('#board-error-log');
@@ -470,19 +477,18 @@ async function _finishGame(winnerColor, fromDB = false) {
       
       if (window.CW_SESSION && window.CW_SESSION.matchId) {
           const sb = getSupabase();
-          // Aseguramos muerte definitiva de la partida
-          await sb.from('matches').update({ status: 'finished' }).eq('id', window.CW_SESSION.matchId);
+          // Aseguramos que la partida muera, pero le volvemos a pasar quién ganó para no crear conflictos
+          await sb.from('matches').update({ status: 'finished', winner: winnerColor }).eq('id', window.CW_SESSION.matchId);
       }
       
       window.CW_SESSION = null; 
       
-      const { reloadProfile } = await import('../core/state.js');
       await reloadProfile(); 
       setView('dashboard');
 
     } catch (error) {
       console.error("Error saliendo al inicio:", error);
-      if ($err) $err.innerHTML = `⚠️ Falla detectada: ${error.message}<br>Forzando salida en 2s...`;
+      if ($err) $err.innerHTML = `⚠️ Falla detectada: ${error.message}<br>Forzando salida...`;
       setTimeout(() => { setView('dashboard'); }, 2000);
     }
   });
