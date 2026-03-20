@@ -1,12 +1,11 @@
 /**
  * ═══════════════════════════════════════════════════════
  * COLOR WARS — js/game/board.js
- * MONOLITO: MULTIJUGADOR + ESCÁNER DE ERRORES + SALIDA FORZADA
+ * MONOLITO: MULTIJUGADOR + SERVIDOR PAGA + SALIDA LIMPIA
  * ═══════════════════════════════════════════════════════
  */
 
 import { registerView, showToast } from '../core/app.js';
-// ⚡ IMPORTACIÓN ESTÁTICA CORREGIDA (Evita que el botón se congele)
 import { setView, getProfile, setProfile, reloadProfile } from '../core/state.js';
 import { getSupabase } from '../core/supabase.js';
 
@@ -407,7 +406,7 @@ function _checkGameOver() {
   return false;
 }
 
-// ⚡ LÓGICA BLINDADA
+// ⚡ LÓGICA BLINDADA: ELIMINADO EL CANDADO DEL BOT. CIERRA SIEMPRE LA PARTIDA.
 async function _finishGame(winnerColor, fromDB = false) {
   if (!_active) return; 
   _active = false;
@@ -420,10 +419,10 @@ async function _finishGame(winnerColor, fromDB = false) {
   const win = winnerColor === myColor;
   
   try {
-    const profile = getProfile();
     const sb = getSupabase();
 
-    if (!fromDB && !window.CW_SESSION.isBotMatch && window.CW_SESSION.matchId) {
+    // 1. EL TELÉFONO LE AVISA A SUPABASE QUE ALGUIEN GANÓ (Sea Humano o Bot)
+    if (!fromDB && window.CW_SESSION.matchId) {
        await sb.from('matches').update({ 
            status: 'finished', 
            winner: winnerColor,
@@ -431,16 +430,7 @@ async function _finishGame(winnerColor, fromDB = false) {
        }).eq('id', window.CW_SESSION.matchId);
     }
     
-    if (window.CW_SESSION.isBotMatch) {
-       if (win) {
-         const newBalance = Number(profile.wallet_bs) + 320;
-         const newWins = (profile.wins || 0) + 1;
-         await sb.from('users').update({ wallet_bs: newBalance, wins: newWins }).eq('id', profile.id);
-       } else {
-         const newLosses = (profile.losses || 0) + 1;
-         await sb.from('users').update({ losses: newLosses }).eq('id', profile.id);
-       }
-    }
+    // Ya no hay matemática manual aquí. El Trigger de Supabase que hicimos se encarga del pago automáticamente.
 
   } catch (e) { console.error("Error al finalizar:", e); }
 
@@ -455,7 +445,7 @@ async function _finishGame(winnerColor, fromDB = false) {
     </div>
   `;
   
-  // ⚡ BOTÓN DE SALIDA BLINDADO CON ESCÁNER DE ERRORES Y SALIDA FORZADA
+  // ⚡ BOTÓN DE SALIDA BLINDADO
   _$container.querySelector('#btn-exit').addEventListener('click', async () => {
     const $btn = _$container.querySelector('#btn-exit');
     const $err = _$container.querySelector('#board-error-log');
@@ -467,15 +457,12 @@ async function _finishGame(winnerColor, fromDB = false) {
       
       window.CW_SESSION = null; 
       
-      // Intentamos recargar el perfil desde Supabase para actualizar la billetera
       await reloadProfile(); 
       setView('dashboard');
 
     } catch (error) {
       console.error("Error saliendo al inicio:", error);
       if ($err) $err.innerHTML = `⚠️ Falla detectada: ${error.message}<br>Forzando salida en 2s...`;
-      
-      // Si todo falla, forzamos la salida al Dashboard sí o sí en 2 segundos
       setTimeout(() => { setView('dashboard'); }, 2000);
     }
   });
