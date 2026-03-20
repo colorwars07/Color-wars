@@ -1,7 +1,7 @@
 /**
  * ═══════════════════════════════════════════════════════
  * COLOR WARS — js/core/app.js
- * SPA Router + UI Core (toast, modal, particles, header)
+ * SPA Router + UI Core (Efecto Brillo Logo + Limpieza Bs)
  * ═══════════════════════════════════════════════════════
  */
 
@@ -12,6 +12,34 @@ import {
   setSession, setProfile, reloadProfile, reloadBcvRate,
   getWalletBs, getWalletUSD,
 } from './state.js';
+
+// ── INYECCIÓN DEL EFECTO BRILLO PARA EL LOGO ───────────
+const style = document.createElement('style');
+style.innerHTML = `
+  #header-title {
+    position: relative;
+    display: inline-block;
+    overflow: hidden;
+    text-shadow: 0 0 10px rgba(255, 0, 127, 0.4);
+  }
+  #header-title::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -150%;
+    width: 60%;
+    height: 100%;
+    background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.8), transparent);
+    transform: skewX(-25deg);
+    animation: logo-shine 3.5s infinite;
+  }
+  @keyframes logo-shine {
+    0% { left: -150%; }
+    15% { left: 150%; }
+    100% { left: 150%; }
+  }
+`;
+document.head.appendChild(style);
 
 // ── DOM refs ───────────────────────────────────────────
 const $loadingScreen  = document.getElementById('loading-screen');
@@ -157,20 +185,10 @@ function updateHeader(viewKey) {
   $appHeader.classList.add('visible');
 
   const profile = getProfile();
-  const bs      = getWalletBs();
-  const usd     = getWalletUSD().toFixed(2);
 
-  if (profile && profile.role !== 'admin') {
-    $headerWallet.classList.remove('hidden');
-    $headerWallet.innerHTML = `
-      <div style="display:flex;align-items:center;gap:.4rem;">
-        <span style="font-family:var(--font-mono);font-size:.58rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:.1em;">Billetera</span>
-        <span style="font-family:var(--font-display);font-size:.82rem;font-weight:700;color:var(--blue);">${bs.toLocaleString('es-VE')} Bs</span>
-        <span style="font-family:var(--font-mono);font-size:.62rem;color:var(--text-dim);">≈ $${usd}</span>
-      </div>`;
-  } else {
-    $headerWallet.classList.add('hidden');
-  }
+  // 🔥 CIRUGÍA: OCULTAMOS Y VACIAR LA BILLETERA DE BS/USD DEL HEADER PARA SIEMPRE
+  $headerWallet.classList.add('hidden');
+  $headerWallet.innerHTML = '';
 
   $headerUser.classList.remove('hidden');
   const name = profile?.username || getSession()?.user?.email || '?';
