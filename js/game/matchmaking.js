@@ -1,7 +1,7 @@
 /**
  * ═══════════════════════════════════════════════════════
  * COLOR WARS — js/views/matchmaking.js
- * MULTIJUGADOR + LÓGICA DE LIMPIEZA EN EL SERVIDOR (RPC)
+ * MULTIJUGADOR + LIMPIEZA DE FANTASMAS + COBRO BLINDADO (RPC)
  * ═══════════════════════════════════════════════════════
  */
 import { registerView, showToast } from '../core/app.js';
@@ -34,8 +34,7 @@ export async function initMatchmaking($container) {
   _currentMatchId = null;
   renderSearchScreen($container);
   
-  // ⚡ ORDEN AL SERVIDOR: El celular ya no hace el trabajo pesado.
-  // Solo le pide a Supabase que ejecute la función nativa que creamos en SQL.
+  // Limpiamos la basura antes de buscar partida
   try {
       const sb = getSupabase();
       await sb.rpc('limpiar_fantasmas', { jugador_id: profile.id });
@@ -61,14 +60,26 @@ function renderSearchScreen($c) {
   $c.querySelector('#btn-cancel-search').addEventListener('click', cancelSearch);
 }
 
+// ⚡ EL COBRO BLINDADO: El celular ya no resta el saldo, le pide al servidor que lo haga
 async function payEntryFee() {
   const profile = getProfile();
   const sb = getSupabase();
   try {
-    const newBalance = Number(profile.wallet_bs) - ENTRY_FEE;
-    await sb.from('users').update({ wallet_bs: newBalance }).eq('id', profile.id);
-    setProfile({ ...profile, wallet_bs: newBalance });
-  } catch(e) { console.error("Error cobrando entrada:", e); }
+    const { data: cobroExitoso, error } = await sb.rpc('cobrar_entrada', {
+      jugador_id: profile.id,
+      costo: ENTRY_FEE
+    });
+
+    if (error) throw error;
+
+    if (cobroExitoso) {
+      // Solo actualizamos visualmente la pantalla si el servidor confirmó el cobro
+      const newBalance = Number(profile.wallet_bs) - ENTRY_FEE;
+      setProfile({ ...profile, wallet_bs: newBalance });
+    } else {
+      console.error("Intento de fraude o saldo insuficiente detectado por el servidor.");
+    }
+  } catch(e) { console.error("Error cobrando entrada en el servidor:", e); }
 }
 
 async function startSearch($c, profile) {
@@ -147,7 +158,6 @@ async function startSearch($c, profile) {
   }
 }
 
-// ⚡ CANCELACIÓN REACTIVA (Celular rápido)
 function cancelSearch() {
   const $btn = document.getElementById('btn-cancel-search');
   if($btn) {
