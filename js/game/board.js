@@ -6,7 +6,7 @@
  */
 
 import { registerView, showToast } from '../core/app.js';
-import { setView, getProfile, setProfile, reloadProfile } from '../core/state.js';
+import { setView, getProfile, setProfile } from '../core/state.js';
 import { getSupabase } from '../core/supabase.js';
 
 const BOARD_SIZE = 5;
@@ -422,6 +422,7 @@ async function _finishGame(winnerColor, fromDB = false) {
     const sb = getSupabase();
 
     // 1. EL TELÉFONO LE AVISA A SUPABASE QUE ALGUIEN GANÓ (Sea Humano o Bot)
+    // La condición de matchId salva el guardado si por alguna razón no existe
     if (!fromDB && window.CW_SESSION.matchId) {
        await sb.from('matches').update({ 
            status: 'finished', 
@@ -430,8 +431,6 @@ async function _finishGame(winnerColor, fromDB = false) {
        }).eq('id', window.CW_SESSION.matchId);
     }
     
-    // Ya no hay matemática manual aquí. El Trigger de Supabase que hicimos se encarga del pago automáticamente.
-
   } catch (e) { console.error("Error al finalizar:", e); }
 
   _$container.innerHTML = `
@@ -457,6 +456,8 @@ async function _finishGame(winnerColor, fromDB = false) {
       
       window.CW_SESSION = null; 
       
+      // Recargamos perfil con import dinámico
+      const { reloadProfile } = await import('../core/state.js');
       await reloadProfile(); 
       setView('dashboard');
 
