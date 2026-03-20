@@ -1,7 +1,7 @@
 /**
  * ═══════════════════════════════════════════════════════
  * COLOR WARS — js/views/dashboard.js
- * TIENDA ÉLITE CP + ORDEN OPTIMIZADO + MATH TRANSPARENTE
+ * TIENDA ÉLITE CP + ORDEN OPTIMIZADO + CALCULADORA RETIROS
  * ═══════════════════════════════════════════════════════
  */
 
@@ -96,7 +96,7 @@ function injectStoreStyles() {
     @keyframes float { 0% { transform: translateY(0); } 50% { transform: translateY(-8px); } 100% { transform: translateY(0); } }
     .cp-logo-text { background: -webkit-linear-gradient(45deg, #00f0ff, #ff00ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
     
-    /* Hack visual para intentar ocultar la billetera vieja del menú de arriba */
+    /* Hack visual para ocultar la billetera vieja del menú superior */
     header .wallet, header .balance-usd, .top-bar-wallet { display: none !important; opacity: 0 !important; }
   `;
   document.head.appendChild(style);
@@ -112,6 +112,10 @@ function render($c) {
   const losses = profile.losses ?? 0;
   const total = wins + losses;
   const winPct = total > 0 ? Math.round(wins / total * 100) : 0;
+
+  // NUEVA ECONOMÍA VISUAL (30 CP ENTRADA / 50 CP PREMIO)
+  const ENTRY_COST = 30;
+  const REWARD = 50;
 
   $c.innerHTML = `
   <div class="dash-grid">
@@ -139,16 +143,16 @@ function render($c) {
     <div class="card" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;padding:1.75rem 1.25rem;background:linear-gradient(135deg,#2e0854,#0b0f19);border-color:#6d28d9; box-shadow: 0 0 20px rgba(109, 40, 217, 0.3);">
       <div style="text-align:center;">
         <p style="font-family:var(--font-display);font-size:.75rem;letter-spacing:.18em;color:var(--text-bright);text-transform:uppercase;margin-bottom:.2rem;">
-          Costo de Entrada: <span style="color:#00f0ff; text-shadow: 0 0 5px #00f0ff;">200 CP</span>
+          Costo de Entrada: <span style="color:#00f0ff; text-shadow: 0 0 5px #00f0ff;">${ENTRY_COST} CP</span>
         </p>
         <p style="font-family:var(--font-mono);font-size:.65rem;color:var(--pink);">
-          Premio al Ganador: 320 CP
+          Premio al Ganador: ${REWARD} CP
         </p>
       </div>
-      <button id="btn-battle" class="btn btn-battle" style="background:#ff00ff; box-shadow: 0 0 15px #ff00ff;" ${cpBalance < 200 ? 'disabled' : ''}>
+      <button id="btn-battle" class="btn btn-battle" style="background:#ff00ff; box-shadow: 0 0 15px #ff00ff;" ${cpBalance < ENTRY_COST ? 'disabled' : ''}>
         ⚔ ENTRAR A LA ARENA
       </button>
-      ${cpBalance < 200 ? `<p style="font-family:var(--font-mono);font-size:.62rem;color:#ff4444;text-align:center;">Insuficientes CP. Ve a la tienda.</p>` : ''}
+      ${cpBalance < ENTRY_COST ? `<p style="font-family:var(--font-mono);font-size:.62rem;color:#ff4444;text-align:center;">Insuficientes CP. Ve a la tienda.</p>` : ''}
     </div>
 
     <div class="card card-acc">
@@ -192,8 +196,9 @@ function attachEvents($c) {
   $c.querySelector('#btn-withdraw')?.addEventListener('click', openWithdrawModal);
   $c.querySelector('#btn-battle')?.addEventListener('click',   () => {
     const profile = getProfile();
-    if (Number(profile.wallet_bs) < 200) {
-      showToast(`Necesitas 200 CP para jugar.`, 'warning');
+    // Validamos que tenga los 30 CP
+    if (Number(profile.wallet_bs) < 30) {
+      showToast(`Necesitas 30 CP para jugar.`, 'warning');
       return;
     }
     setView('matchmaking');
@@ -225,7 +230,7 @@ async function loadLeaderboard($c) {
   </table>`;
 }
 
-// ⚡ TIENDA CON CALCULADORA EXPLICATIVA
+// ⚡ TIENDA CP (COMPRAR)
 function openStoreModal() {
   const rate = getBcvRate();
   const packs = [
@@ -300,13 +305,10 @@ function openStoreModal() {
       const totalBs = (selectedUSD * rate).toFixed(2);
       
       document.getElementById('sel-cp').textContent = `${selectedCP} CP`;
-      
-      // La matemática clara en pantalla para que no se asusten
       document.getElementById('sel-bs').innerHTML = `
         ${parseFloat(totalBs).toLocaleString('es-VE')} Bs<br>
         <span style="font-size:0.7rem; color:#fff; font-family:var(--font-mono); font-weight:normal;">(${selectedUSD.toFixed(2)} USD x ${rate} Bs/$)</span>
       `;
-      
       document.getElementById('store-step-1').style.display = 'none';
       document.getElementById('store-step-2').style.display = 'block';
     });
@@ -392,10 +394,24 @@ async function submitStorePurchase(usd, cpAmount, rate) {
   }
 }
 
-// ⚡ MODAL DE CANJEO
+// ⚡ MODAL DE CANJEO CON CALCULADORA Y LISTA DE BANCOS NATIVA
 function openWithdrawModal() {
   const profile = getProfile();
   const cpBalance = Number(profile.wallet_bs || 0);
+  const rate = getBcvRate();
+
+  const BANKS = [
+    "0102 - BANCO DE VENEZUELA", "0156 - 100% BANCO", "0172 - BANCAMIGA BANCO UNIVERSAL, C.A.",
+    "0114 - BANCARIBE", "0171 - BANCO ACTIVO", "0128 - BANCO CARONÍ", "0163 - BANCO DEL TESORO",
+    "0175 - BANCO DIGITAL DE LOS TRABAJADORES, BANCO UNIVERSAL", "0115 - BANCO EXTERIOR",
+    "0151 - BANCO FONDO COMÚN", "0105 - BANCO MERCANTIL", "0191 - BANCO NACIONAL DE CREDITO",
+    "0138 - BANCO PLAZA", "0137 - BANCO SOFITASA", "0104 - BANCO VENEZOLANO DE CREDITO",
+    "0168 - BANCRECER", "0134 - BANESCO", "0177 - BANFANB", "0146 - BANGENTE", "0174 - BANPLUS",
+    "0108 - BBVA PROVINCIAL", "0157 - DELSUR BANCO UNIVERSAL",
+    "0601 - INSTITUTO MUNICIPAL DE CREDITO POPULAR",
+    "0178 - N58 BANCO DIGITAL BANCO MICROFINANCIERO S A",
+    "0169 - R4 BANCO MICROFINANCIERO C.A."
+  ];
 
   showModal(`
     <button class="modal-close" onclick="window.__CW_hideModal()">✕</button>
@@ -408,9 +424,19 @@ function openWithdrawModal() {
       <label class="field-label" for="wd-amount">Cantidad de CP a canjear</label>
       <input id="wd-amount" type="number" min="1" step="1" class="input-field" placeholder="Ej: 500" inputmode="decimal" style="border-color:#ff00ff;" />
     </div>
+
+    <div id="wd-calc" style="background:rgba(255,0,255,0.1); border:1px solid #ff00ff; border-radius:10px; padding:10px; text-align:center; margin-bottom:15px; display:none;">
+      <p style="font-family:var(--font-mono); font-size:0.7rem; color:var(--text-dim);">Recibirás en tu cuenta bancaria:</p>
+      <div style="font-family:var(--font-display); color:#00f0ff; font-size:1.3rem; margin-top:5px;" id="wd-bs-result">0.00 Bs</div>
+      <p style="font-family:var(--font-mono); font-size:0.6rem; color:var(--text-ghost);">(Tasa BCV: <span id="wd-rate">${rate}</span> Bs/$)</p>
+    </div>
+
     <div class="field-group">
       <label class="field-label" for="wd-bank">Banco Destino</label>
-      <input id="wd-bank" type="text" class="input-field" placeholder="Ej: Banco de Venezuela" />
+      <input id="wd-bank" list="banks-list" class="input-field" placeholder="Escribe el código o selecciona..." />
+      <datalist id="banks-list">
+        ${BANKS.map(b => `<option value="${b}">`).join('')}
+      </datalist>
     </div>
     <div class="field-group">
       <label class="field-label" for="wd-phone">Teléfono (Pago Móvil)</label>
@@ -425,6 +451,24 @@ function openWithdrawModal() {
     <button id="btn-wd-submit" class="btn btn-primary" style="width:100%;height:46px;font-size:.75rem;letter-spacing:.12em; background:#ff00ff; border:none; box-shadow:0 0 10px rgba(255,0,255,0.5);">
       SOLICITAR CANJE
     </button>`, { closable: true });
+
+  // Lógica de la calculadora de retiro
+  const $amount = document.getElementById('wd-amount');
+  const $calc = document.getElementById('wd-calc');
+  const $bsRes = document.getElementById('wd-bs-result');
+
+  $amount?.addEventListener('input', () => {
+    const cp = parseFloat($amount.value);
+    if (!isNaN(cp) && cp > 0) {
+      // 100 CP = 1 USD
+      const usd = cp / 100;
+      const bs = (usd * rate).toFixed(2);
+      $bsRes.textContent = parseFloat(bs).toLocaleString('es-VE') + ' Bs';
+      $calc.style.display = 'block';
+    } else {
+      $calc.style.display = 'none';
+    }
+  });
 
   document.getElementById('btn-wd-submit')?.addEventListener('click', submitWithdraw);
 }
