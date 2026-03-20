@@ -1,7 +1,7 @@
 /**
  * ═══════════════════════════════════════════════════════
  * COLOR WARS — js/game/board.js
- * MONOLITO FINAL: IA TERMINATOR LEGAL + ANTI-CUELGUES
+ * MONOLITO FINAL: IA TERMINATOR LEGAL + SALIDA BLINDADA
  * ═══════════════════════════════════════════════════════
  */
 
@@ -142,7 +142,7 @@ function handlePlayerClick(row, col) {
     for (let c = 0; c < BOARD_SIZE; c++) { if (window.CW_SESSION.board[r][c].owner === myColor) myCellsCount++; }
   }
   
-  // REGLA DE ORO DEL JUGADOR: Si tienes fichas, estás obligado a tocarlas. No puedes tocar vacíos.
+  // REGLA DE ORO DEL JUGADOR
   if (myCellsCount > 0 && cell.owner !== myColor) { 
       showToast('Debes expandir tus propias fichas', 'warning'); 
       return; 
@@ -157,7 +157,7 @@ function _startTurn() {
   _timeLeft = 10; updateTimerUI();
 
   const myColor = window.CW_SESSION.myColor;
-  const botColor = myColor === 'pink' ? 'blue' : 'pink'; // Deducción blindada del color del Bot
+  const botColor = myColor === 'pink' ? 'blue' : 'pink'; 
 
   if (_currentTurn === myColor) {
     _turnTimer = setInterval(() => {
@@ -254,15 +254,14 @@ async function _explode(row, col, color) {
   }
 }
 
-// 🤖 CEREBRO TERMINATOR (Legal y Táctico)
+// 🤖 CEREBRO TERMINATOR
 function _botMove() {
   try {
     const board = window.CW_SESSION.board;
     const enemyColor = window.CW_SESSION.myColor;
-    const botColor = enemyColor === 'pink' ? 'blue' : 'pink'; // Blindado
+    const botColor = enemyColor === 'pink' ? 'blue' : 'pink'; 
     const validMoves = [];
 
-    // 1. Contar fichas vivas del bot
     let botCellsCount = 0;
     for (let r = 0; r < BOARD_SIZE; r++) {
       for (let c = 0; c < BOARD_SIZE; c++) {
@@ -270,14 +269,12 @@ function _botMove() {
       }
     }
 
-    // 2. REGLA DE ORO DEL BOT (No hacer trampa)
+    // REGLA DE ORO DEL BOT
     for (let r = 0; r < BOARD_SIZE; r++) {
       for (let c = 0; c < BOARD_SIZE; c++) {
         if (botCellsCount > 0) {
-            // Si tiene fichas, ESTÁ OBLIGADO a tocar las suyas
             if (board[r][c].owner === botColor) validMoves.push({ r, c, mass: board[r][c].mass, owner: botColor });
         } else {
-            // Si el tablero está vacío para él, toca una vacía
             if (!board[r][c].owner) validMoves.push({ r, c, mass: 0, owner: null });
         }
       }
@@ -285,7 +282,6 @@ function _botMove() {
 
     if (validMoves.length === 0) { _passTurn(); return; }
 
-    // Si es su primer turno (tablero vacío), busca el centro
     if (botCellsCount === 0) {
       validMoves.sort((a, b) => {
         const distA = Math.abs(a.r - 2) + Math.abs(a.c - 2);
@@ -297,7 +293,7 @@ function _botMove() {
       return;
     }
 
-    // 3. EVALUACIÓN TÁCTICA (Reacciones en Cadena)
+    // EVALUACIÓN TÁCTICA 
     let bestMove = null;
     let highestScore = -99999;
 
@@ -305,12 +301,10 @@ function _botMove() {
       let score = 0;
       const r = move.r; const c = move.c;
       
-      // A. Preferencia por subir niveles (Armar la bomba)
       if (move.mass === 3) score += 80;  
       if (move.mass === 2) score += 40;  
       if (move.mass === 1) score += 10;
 
-      // B. Escanear enemigos alrededor
       const neighbors = [ {rr: r-1, cc: c}, {rr: r+1, cc: c}, {rr: r, cc: c-1}, {rr: r, cc: c+1} ];
       
       for (const n of neighbors) {
@@ -318,28 +312,24 @@ function _botMove() {
           const neighbor = board[n.rr][n.cc];
           
           if (neighbor.owner === enemyColor) {
-            
-            // MECÁNICA ESTRELLA: Amenaza de Reacción en Cadena
             if (neighbor.mass === 3) {
-                if (move.mass === 3) score += 10000; // ¡Explotar primero!
-                else if (move.mass === 2) score += 5000; // Defensa tensiva
+                if (move.mass === 3) score += 10000; 
+                else if (move.mass === 2) score += 5000; 
                 else score += 100;
             } 
             else if (neighbor.mass === 2) {
               if (move.mass === 3) score += 2000;
-              else if (move.mass === 2) score += 500; // Presión psicológica
+              else if (move.mass === 2) score += 500; 
             }
             else {
-              if (move.mass === 3) score += 800; // Comer fácil
+              if (move.mass === 3) score += 800; 
             }
-
           } else if (neighbor.owner === botColor) {
-            score += 15; // Sinergia con sus fichas
+            score += 15; 
           }
         }
       }
 
-      // Factor de imprevisibilidad
       score += Math.random() * 10;
 
       if (score > highestScore) {
@@ -368,7 +358,7 @@ function _checkGameOver() {
   return false;
 }
 
-// ⚡ ANTI-CUELGUES: Finalización Blindada
+// ⚡ SALIDA BLINDADA (El Rompecadenas)
 async function _finishGame(winnerColor, fromDB = false) {
   if (!_active) return; 
   _active = false;
@@ -379,24 +369,23 @@ async function _finishGame(winnerColor, fromDB = false) {
   const myColor = window.CW_SESSION.myColor;
   const win = winnerColor === myColor;
 
-  // Pantalla temporal por si Supabase tarda
   _$container.innerHTML = `
     <div class="result-screen" style="display:flex; flex-direction:column; justify-content:center; align-items:center; height:100vh; width: 100%; background:var(--bg-dark); position: absolute; top: 0; left: 0; z-index: 999;">
-      <h1 class="result-title" style="color:var(--text-dim); font-size: 1.4rem;">SINCRONIZANDO DATOS...</h1>
+      <h1 class="result-title" style="color:var(--text-dim); font-size: 1.4rem;">PROCESANDO...</h1>
+      <p style="color:var(--text-dim);font-family:var(--font-mono);margin-bottom:2rem; text-align:center;">Guardando partida en el servidor</p>
     </div>
   `;
   
   try {
     const sb = getSupabase();
     if (!fromDB && window.CW_SESSION.matchId) {
-       // La Carrera (Promise.race): Le damos a Supabase máximo 2.5 segundos para responder. Si no, seguimos de largo para no colgar al usuario.
-       const updatePromise = sb.from('matches').update({ status: 'finished', winner: winnerColor, board_state: window.CW_SESSION.board }).eq('id', window.CW_SESSION.matchId);
-       const timeoutPromise = new Promise(resolve => setTimeout(resolve, 2500));
-       await Promise.race([updatePromise, timeoutPromise]);
+       // Await directo, sin trucos ni carreras de tiempo. Aseguramos que Supabase anote el final.
+       await sb.from('matches')
+         .update({ status: 'finished', winner: winnerColor, board_state: window.CW_SESSION.board })
+         .eq('id', window.CW_SESSION.matchId);
     }
-  } catch (e) { console.error("Fallo menor de red al guardar victoria", e); }
+  } catch (e) { console.error("Error guardando final:", e); }
 
-  // 100% Garantizado que llega aquí y te muestra si ganaste o perdiste
   _$container.innerHTML = `
     <div class="result-screen" style="display:flex; flex-direction:column; justify-content:center; align-items:center; height:100vh; width: 100%; background:var(--bg-dark); position: absolute; top: 0; left: 0; z-index: 999;">
       <h1 class="result-title ${win ? 'result-win' : 'result-lose'}">${win ? '¡VICTORIA!' : 'DERROTA'}</h1>
@@ -407,10 +396,18 @@ async function _finishGame(winnerColor, fromDB = false) {
   
   _$container.querySelector('#btn-exit').addEventListener('click', async () => {
     const $btn = _$container.querySelector('#btn-exit'); 
-    try {
-      $btn.textContent = "SALIENDO..."; $btn.style.opacity = "0.7"; $btn.style.pointerEvents = "none";
-      window.CW_SESSION = null; 
-      await reloadProfile(); setView('dashboard');
-    } catch (error) { setTimeout(() => { setView('dashboard'); }, 1000); }
+    $btn.textContent = "SALIENDO..."; $btn.style.opacity = "0.7"; $btn.style.pointerEvents = "none";
+
+    // DOBLE CANDADO: Forzamos la cancelación por si acaso antes de salir
+    if (window.CW_SESSION && window.CW_SESSION.matchId) {
+        try {
+           const sb = getSupabase();
+           await sb.from('matches').update({ status: 'finished' }).eq('id', window.CW_SESSION.matchId);
+        } catch(e) {}
+    }
+
+    window.CW_SESSION = null; 
+    await reloadProfile(); 
+    setView('dashboard');
   });
 }
