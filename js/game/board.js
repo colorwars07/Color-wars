@@ -1,7 +1,7 @@
 /**
  * ═══════════════════════════════════════════════════════
  * COLOR WARS — js/game/board.js
- * MONOLITO FINAL: MOTOR DE AJEDREZ (MINIMAX) + ANTI-BUCLES
+ * CEREBRO GRAN MAESTRO (Geometría Corregida: Todo explota en 4)
  * ═══════════════════════════════════════════════════════
  */
 
@@ -142,7 +142,6 @@ function handlePlayerClick(row, col) {
     for (let c = 0; c < BOARD_SIZE; c++) { if (window.CW_SESSION.board[r][c].owner === myColor) myCellsCount++; }
   }
   
-  // Regla de Oro
   if (myCellsCount > 0 && cell.owner !== myColor) { 
       showToast('Debes expandir tus propias fichas', 'warning'); 
       return; 
@@ -176,7 +175,7 @@ function _startTurn() {
       setTimeout(() => {
         if (!_active || _currentTurn !== botColor) return;
         _botMove();
-      }, 1000 + Math.random() * 500); 
+      }, 800 + Math.random() * 500); 
     }
   }
 }
@@ -232,4 +231,206 @@ async function _processMass(row, col, color) {
   const cell = window.CW_SESSION.board[row][col];
   cell.owner = color; cell.mass++;
 
-  if (
+  if (cell.mass >= 4) { await _explode(row, col, color); } else { updateDOM(); }
+}
+
+async function _explode(row, col, color) {
+  if (!_active) return;
+  window.CW_SESSION.board[row][col].mass = 0; window.CW_SESSION.board[row][col].owner = null; 
+  updateDOM();
+
+  // El sistema YA asume que se pierden esquirlas si explota en un borde/esquina, 
+  // porque solo empuja a los vecinos válidos.
+  const neighbors = [];
+  if (row > 0) neighbors.push({row: row - 1, col});
+  if (row < BOARD_SIZE - 1) neighbors.push({row: row + 1, col});
+  if (col > 0) neighbors.push({row, col: col - 1});
+  if (col < BOARD_SIZE - 1) neighbors.push({row, col: col + 1});
+
+  await new Promise(r => setTimeout(r, 200));
+
+  for (const n of neighbors) {
+    if (!_active) break;
+    await _processMass(n.row, n.col, color);
+  }
+}
+
+// 🧠 CEREBRO GRAN MAESTRO (Entiende que Todo Explota en 4)
+function _botMove() {
+  try {
+    const board = window.CW_SESSION.board;
+    const enemyColor = window.CW_SESSION.myColor;
+    const botColor = enemyColor === 'pink' ? 'blue' : 'pink'; 
+    const validMoves = [];
+
+    // 1. Contar fichas y determinar movimientos legales
+    let botCellsCount = 0;
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        if (board[r][c].owner === botColor) botCellsCount++;
+      }
+    }
+
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        if (botCellsCount > 0) {
+            if (board[r][c].owner === botColor) validMoves.push({ r, c, mass: board[r][c].mass, owner: botColor });
+        } else {
+            if (!board[r][c].owner) validMoves.push({ r, c, mass: 0, owner: null });
+        }
+      }
+    }
+
+    if (validMoves.length === 0) { _passTurn(); return; }
+
+    // 2. LA EVALUACIÓN MENTAL: Geometría real de tu juego
+    let bestMove = null;
+    let bestScore = -Infinity;
+
+    for (const move of validMoves) {
+      let r = move.r; 
+      let c = move.c;
+      let score = 0;
+
+      // ♟️ TÁCTICA 1: La Geometría Brutal
+      let isCorner = (r===0 && c===0) || (r===0 && c===4) || (r===4 && c===0) || (r===4 && c===4);
+      let isEdge = r===0 || r===4 || c===0 || c===4;
+      
+      // En tu juego el CENTRO es el rey (4 de 4 impactos). Las esquinas son la peor trampa (2 de 4 impactos).
+      if (!isEdge && !isCorner) {
+          score += 40; // El centro es jugoso
+      } else if (isEdge && !isCorner) {
+          score += 10; // Los bordes están bien
+      } else if (isCorner) {
+          score -= 20; // Huir de las esquinas, son un desperdicio de puntos
+      }
+
+      // ♟️ TÁCTICA 2: El Armado de la Trampa (Todo necesita 4 para explotar)
+      // Por ende, el nivel de peligro inminente siempre es 3.
+      if (move.mass === 3) {
+          score += 150; // ¡Bomba lista para detonar!
+      } else if (move.mass === 2) {
+          score += 50;
+      } else if (move.mass === 1) {
+          score += 10;
+      }
+
+      // ♟️ TÁCTICA 3: Escáner de Amenazas a Muerte
+      const neighbors = [ {rr: r-1, cc: c}, {rr: r+1, cc: c}, {rr: r, cc: c-1}, {rr: r, cc: c+1} ];
+      let dangerZone = 0;
+      let attackPotential = 0;
+
+      for (const n of neighbors) {
+        if (n.rr >= 0 && n.rr < BOARD_SIZE && n.cc >= 0 && n.cc < BOARD_SIZE) {
+          const neighbor = board[n.rr][n.cc];
+          
+          if (neighbor.owner === enemyColor) {
+            // El enemigo está en nivel 3: ¡ES LETAL! (Porque necesita 4 para explotar)
+            if (neighbor.mass === 3) { 
+                
+                if (move.mass === 3) {
+                    // ¡JAQUE MATE! Yo exploto primero, gano la cadena y le robo su bomba.
+                    score += 10000; 
+                } else if (move.mass === 2) {
+                    // DEFENSA PSICOLÓGICA: Lo subo a 3 para amenazarlo en la cara y forzarlo.
+                    score += 4000;
+                } else {
+                    // PELIGRO: Si pongo una ficha aquí y no lo puedo amenazar, me la va a robar en su turno.
+                    dangerZone -= 5000; 
+                }
+            } else if (neighbor.mass === 2) {
+                // El enemigo está armando la trampa. Lo presiono.
+                if (move.mass === 3) attackPotential += 1000; // Si lo exploto, me llevo su 2 de gratis.
+                else attackPotential += 50; 
+            } else {
+                attackPotential += 20; // Comer morralla siempre es útil.
+            }
+
+          } else if (neighbor.owner === botColor) {
+            // Sinergia: Mis propias fichas cerca potencian mis reacciones en cadena
+            attackPotential += 15;
+          }
+        }
+      }
+
+      score += dangerZone + attackPotential;
+
+      // Factor aleatorio mínimo para que no repita exactamente el mismo partido 2 veces
+      score += Math.random() * 5;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestMove = move;
+      }
+    }
+
+    if (bestMove) { _addMass(bestMove.r, bestMove.c, botColor); } else { _passTurn(); }
+  } catch (err) { console.error("Error en IA Maestro:", err); _passTurn(); }
+}
+
+function _checkGameOver() {
+  let pink = 0, blue = 0;
+  const board = window.CW_SESSION.board;
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      if (board[r][c].owner === 'pink') pink++;
+      else if (board[r][c].owner === 'blue') blue++;
+    }
+  }
+  if (_turnCount >= 2) {
+     if (pink === 0 && blue > 0) { _finishGame('blue'); return true; }
+     if (blue === 0 && pink > 0) { _finishGame('pink'); return true; }
+  }
+  return false;
+}
+
+async function _finishGame(winnerColor, fromDB = false) {
+  if (!_active) return; 
+  _active = false;
+  
+  clearInterval(_turnTimer); clearInterval(_graceTimer);
+  if (_matchChannel) _matchChannel.unsubscribe();
+  
+  const myColor = window.CW_SESSION.myColor;
+  const win = winnerColor === myColor;
+
+  _$container.innerHTML = `
+    <div class="result-screen" style="display:flex; flex-direction:column; justify-content:center; align-items:center; height:100vh; width: 100%; background:var(--bg-dark); position: absolute; top: 0; left: 0; z-index: 999;">
+      <h1 class="result-title" style="color:var(--text-dim); font-size: 1.4rem;">PROCESANDO...</h1>
+      <p style="color:var(--text-dim);font-family:var(--font-mono);margin-bottom:2rem; text-align:center;">Guardando partida en el servidor</p>
+    </div>
+  `;
+  
+  try {
+    const sb = getSupabase();
+    if (!fromDB && window.CW_SESSION.matchId) {
+       await sb.from('matches')
+         .update({ status: 'finished', winner: winnerColor, board_state: window.CW_SESSION.board })
+         .eq('id', window.CW_SESSION.matchId);
+    }
+  } catch (e) { console.error("Error guardando final:", e); }
+
+  _$container.innerHTML = `
+    <div class="result-screen" style="display:flex; flex-direction:column; justify-content:center; align-items:center; height:100vh; width: 100%; background:var(--bg-dark); position: absolute; top: 0; left: 0; z-index: 999;">
+      <h1 class="result-title ${win ? 'result-win' : 'result-lose'}">${win ? '¡VICTORIA!' : 'DERROTA'}</h1>
+      <p style="color:var(--text-dim);font-family:var(--font-mono);margin-bottom:2rem; text-align:center;">${win ? '+50 CP acreditados' : 'Perdiste la batalla'}</p>
+      <button class="btn btn-primary" id="btn-exit" style="width:200px;">VOLVER AL INICIO</button>
+    </div>
+  `;
+  
+  _$container.querySelector('#btn-exit').addEventListener('click', async () => {
+    const $btn = _$container.querySelector('#btn-exit'); 
+    $btn.textContent = "SALIENDO..."; $btn.style.opacity = "0.7"; $btn.style.pointerEvents = "none";
+
+    if (window.CW_SESSION && window.CW_SESSION.matchId) {
+        try {
+           const sb = getSupabase();
+           await sb.from('matches').update({ status: 'finished' }).eq('id', window.CW_SESSION.matchId);
+        } catch(e) {}
+    }
+
+    window.CW_SESSION = null; 
+    await reloadProfile(); 
+    setView('dashboard');
+  });
+}
