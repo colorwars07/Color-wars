@@ -1,7 +1,7 @@
 /**
  * ═══════════════════════════════════════════════════════
  * COLOR WARS — js/views/dashboard.js
- * TIENDA ÉLITE COLOR-POINS (CP) + ECONOMÍA BLINDADA
+ * TIENDA ÉLITE CP + ORDEN OPTIMIZADO + MATH TRANSPARENTE
  * ═══════════════════════════════════════════════════════
  */
 
@@ -29,7 +29,6 @@ export async function initDashboardView($container) {
     if (isReconnected) return; 
   }
 
-  // Inyectamos los estilos de la Tienda de Cristales
   injectStoreStyles();
   render($container);
 
@@ -96,6 +95,9 @@ function injectStoreStyles() {
     }
     @keyframes float { 0% { transform: translateY(0); } 50% { transform: translateY(-8px); } 100% { transform: translateY(0); } }
     .cp-logo-text { background: -webkit-linear-gradient(45deg, #00f0ff, #ff00ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    
+    /* Hack visual para intentar ocultar la billetera vieja del menú de arriba */
+    header .wallet, header .balance-usd, .top-bar-wallet { display: none !important; opacity: 0 !important; }
   `;
   document.head.appendChild(style);
 }
@@ -104,7 +106,6 @@ function render($c) {
   const profile = getProfile();
   if (!profile) { setView('auth'); return; }
 
-  // LA BILLETERA AHORA ES EN COLOR-POINS (CP)
   const cpBalance = Number(profile.wallet_bs || 0); 
   const rate  = getBcvRate();
   const wins  = profile.wins   ?? 0;
@@ -135,6 +136,21 @@ function render($c) {
       </div>
     </div>
 
+    <div class="card" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;padding:1.75rem 1.25rem;background:linear-gradient(135deg,#2e0854,#0b0f19);border-color:#6d28d9; box-shadow: 0 0 20px rgba(109, 40, 217, 0.3);">
+      <div style="text-align:center;">
+        <p style="font-family:var(--font-display);font-size:.75rem;letter-spacing:.18em;color:var(--text-bright);text-transform:uppercase;margin-bottom:.2rem;">
+          Costo de Entrada: <span style="color:#00f0ff; text-shadow: 0 0 5px #00f0ff;">200 CP</span>
+        </p>
+        <p style="font-family:var(--font-mono);font-size:.65rem;color:var(--pink);">
+          Premio al Ganador: 320 CP
+        </p>
+      </div>
+      <button id="btn-battle" class="btn btn-battle" style="background:#ff00ff; box-shadow: 0 0 15px #ff00ff;" ${cpBalance < 200 ? 'disabled' : ''}>
+        ⚔ ENTRAR A LA ARENA
+      </button>
+      ${cpBalance < 200 ? `<p style="font-family:var(--font-mono);font-size:.62rem;color:#ff4444;text-align:center;">Insuficientes CP. Ve a la tienda.</p>` : ''}
+    </div>
+
     <div class="card card-acc">
       <p style="font-family:var(--font-mono);font-size:.62rem;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim);margin-bottom:.9rem;">📊 Récord de Batalla</p>
       <div class="donut-wrap">
@@ -153,21 +169,6 @@ function render($c) {
     <div class="card card-acc" id="lb-card">
       <p style="font-family:var(--font-mono);font-size:.62rem;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim);margin-bottom:.9rem;">🏆 Top Leyendas</p>
       <div id="lb-body" style="font-family:var(--font-mono);font-size:.7rem;color:var(--text-dim);">Cargando…</div>
-    </div>
-
-    <div class="card" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;padding:1.75rem 1.25rem;background:linear-gradient(135deg,#2e0854,#0b0f19);border-color:#6d28d9; box-shadow: 0 0 20px rgba(109, 40, 217, 0.3);">
-      <div style="text-align:center;">
-        <p style="font-family:var(--font-display);font-size:.75rem;letter-spacing:.18em;color:var(--text-bright);text-transform:uppercase;margin-bottom:.2rem;">
-          Costo de Entrada: <span style="color:#00f0ff; text-shadow: 0 0 5px #00f0ff;">200 CP</span>
-        </p>
-        <p style="font-family:var(--font-mono);font-size:.65rem;color:var(--pink);">
-          Premio al Ganador: 320 CP
-        </p>
-      </div>
-      <button id="btn-battle" class="btn btn-battle" style="background:#ff00ff; box-shadow: 0 0 15px #ff00ff;" ${cpBalance < 200 ? 'disabled' : ''}>
-        ⚔ ENTRAR A LA ARENA
-      </button>
-      ${cpBalance < 200 ? `<p style="font-family:var(--font-mono);font-size:.62rem;color:#ff4444;text-align:center;">Insuficientes CP. Ve a la tienda.</p>` : ''}
     </div>
 
   </div>`;
@@ -224,7 +225,7 @@ async function loadLeaderboard($c) {
   </table>`;
 }
 
-// ⚡ LA NUEVA TIENDA ESTILO FREE FIRE
+// ⚡ TIENDA CON CALCULADORA EXPLICATIVA
 function openStoreModal() {
   const rate = getBcvRate();
   const packs = [
@@ -260,8 +261,7 @@ function openStoreModal() {
       <div style="background:rgba(0,240,255,0.1); border:1px solid #00f0ff; border-radius:10px; padding:15px; text-align:center; margin-bottom:15px;">
         <p style="font-family:var(--font-display); color:white; margin-bottom:5px;">Paquete Seleccionado: <span id="sel-cp" style="color:#00f0ff; font-size:1.2rem;">0 CP</span></p>
         <p style="font-family:var(--font-mono); font-size:0.75rem; color:var(--text-dim);">Debes transferir exactamente:</p>
-        <p style="font-family:var(--font-display); color:#ffaa00; font-size:1.5rem; margin-top:5px;" id="sel-bs">0.00 Bs</p>
-        <p style="font-family:var(--font-mono); font-size:0.6rem; color:var(--text-ghost);">(Tasa BCV: ${rate} Bs/$)</p>
+        <div style="font-family:var(--font-display); color:#ffaa00; font-size:1.5rem; margin-top:5px; line-height: 1.2;" id="sel-bs">0.00 Bs</div>
       </div>
 
       <div class="bank-box" style="margin-bottom:15px;">
@@ -293,7 +293,6 @@ function openStoreModal() {
   let selectedUSD = 0;
   let selectedCP = 0;
 
-  // Lógica de transición de la tienda
   document.querySelectorAll('.pack-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       selectedCP = parseInt(btn.getAttribute('data-cp'));
@@ -301,7 +300,12 @@ function openStoreModal() {
       const totalBs = (selectedUSD * rate).toFixed(2);
       
       document.getElementById('sel-cp').textContent = `${selectedCP} CP`;
-      document.getElementById('sel-bs').textContent = `${parseFloat(totalBs).toLocaleString('es-VE')} Bs`;
+      
+      // La matemática clara en pantalla para que no se asusten
+      document.getElementById('sel-bs').innerHTML = `
+        ${parseFloat(totalBs).toLocaleString('es-VE')} Bs<br>
+        <span style="font-size:0.7rem; color:#fff; font-family:var(--font-mono); font-weight:normal;">(${selectedUSD.toFixed(2)} USD x ${rate} Bs/$)</span>
+      `;
       
       document.getElementById('store-step-1').style.display = 'none';
       document.getElementById('store-step-2').style.display = 'block';
@@ -339,7 +343,6 @@ function bankRow(key, val) {
   </div>`;
 }
 
-// ⚡ PROCESAMIENTO DE COMPRA DE CRISTALES
 async function submitStorePurchase(usd, cpAmount, rate) {
   const $ref     = document.getElementById('rc-ref');
   const $file    = document.getElementById('rc-file');
@@ -368,8 +371,6 @@ async function submitStorePurchase(usd, cpAmount, rate) {
     const imageUrl = urlData?.publicUrl ?? '';
     const bs = parseFloat((usd * rate).toFixed(2));
 
-    // GUARDAMOS EN BASE DE DATOS (Mantenemos la compatibilidad con tu panel admin usando amount_bs y amount_usd)
-    // Cuando el admin apruebe, le debe sumar la cantidad equivalente en la tabla users
     const { error: insertErr } = await sb.from('recharges').insert({
       user_email: profile.email,
       amount_usd: usd,
@@ -391,7 +392,7 @@ async function submitStorePurchase(usd, cpAmount, rate) {
   }
 }
 
-// ⚡ MODAL DE CANJEO DE CP A BOLÍVARES
+// ⚡ MODAL DE CANJEO
 function openWithdrawModal() {
   const profile = getProfile();
   const cpBalance = Number(profile.wallet_bs || 0);
