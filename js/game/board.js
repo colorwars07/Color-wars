@@ -1,7 +1,7 @@
 /**
  * ═══════════════════════════════════════════════════════
  * COLOR WARS — js/game/board.js
- * MONOLITO 100/100: IA BLINDADA + GUARDADO ESTRICTO + DOBLE DISPARO
+ * MONOLITO 100/100: MOTOR ASÍNCRONO "FIRE & FORGET" + IA SEGURA
  * ═══════════════════════════════════════════════════════
  */
 
@@ -39,7 +39,6 @@ export async function initGameView($container) {
 
   const sb = getSupabase();
 
-  // ⚡ ESCUDO 1: OBLIGAMOS A LEER SUPABASE SIEMPRE (Sea Humano o Bot)
   if (window.CW_SESSION.matchId) {
     try {
       const { data: matchData } = await sb.from('matches').select('*').eq('id', window.CW_SESSION.matchId).single();
@@ -51,7 +50,6 @@ export async function initGameView($container) {
         if (matchData.board_state) window.CW_SESSION.board = matchData.board_state;
         if (matchData.current_turn) _currentTurn = matchData.current_turn;
         
-        // Recalculamos los turnos jugados para que el sistema sepa si ya puede declarar un ganador
         let pieces = 0;
         for(let r=0; r<BOARD_SIZE; r++) {
            for(let c=0; c<BOARD_SIZE; c++) {
@@ -62,7 +60,6 @@ export async function initGameView($container) {
       }
     } catch(e) { console.error("Error cargando tablero desde Supabase:", e); }
 
-    // El canal en tiempo real solo lo abrimos para Humanos
     if (!window.CW_SESSION.isBotMatch) {
       _matchChannel = sb.channel(`game_${window.CW_SESSION.matchId}`)
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches', filter: `id=eq.${window.CW_SESSION.matchId}` }, (payload) => {
@@ -266,7 +263,8 @@ async function claimForfeitVictory() {
   const myColor = window.CW_SESSION.myColor || 'pink';
   const sb = getSupabase();
   
-  await sb.from('matches').update({
+  // Fire & Forget: No frenamos el juego por Supabase
+  sb.from('matches').update({
      status: 'finished',
      winner: myColor
   }).eq('id', window.CW_SESSION.matchId);
@@ -274,7 +272,7 @@ async function claimForfeitVictory() {
   _finishGame(myColor, true);
 }
 
-// ⚡ ESCUDO 1: GUARDAR SIEMPRE EN SUPABASE, INCLUSO PARA BOTS
+// ⚡ MOTOR ASÍNCRONO FIRE & FORGET
 async function _passTurn() {
   if (!_active) return;
   _turnCount++;
@@ -286,12 +284,14 @@ async function _passTurn() {
      
      if (window.CW_SESSION.matchId) {
          const sb = getSupabase();
-         try {
-             await sb.from('matches').update({
-                board_state: window.CW_SESSION.board,
-                current_turn: nextTurn
-             }).eq('id', window.CW_SESSION.matchId);
-         } catch(e) { console.error("Error guardando turno:", e); }
+         // ⚡ CIRUGÍA: Eliminado el 'await' que congelaba el juego. 
+         // El juego sigue corriendo al 100%, Supabase se actualiza en segundo plano.
+         sb.from('matches').update({
+            board_state: window.CW_SESSION.board,
+            current_turn: nextTurn
+         }).eq('id', window.CW_SESSION.matchId).then(({error}) => {
+             if(error) console.error("Error de sync en background:", error);
+         });
      }
      
      _startTurn();
@@ -340,7 +340,6 @@ async function _explode(row, col, color) {
   }
 }
 
-// ⚡ ESCUDO 2: EL CEREBRO BLINDADO DEL BOT (Si falla, pasa turno, nunca se congela)
 function _botMove() {
   try {
     const board = window.CW_SESSION.board;
@@ -401,7 +400,6 @@ function _botMove() {
       }
     }
   } catch (err) {
-    // Si la matemática le da un ACV, imprimimos el error pero PASAMOS EL TURNO para no joder al jugador
     console.error("BOT CRASH EVITADO:", err);
     _passTurn();
   }
@@ -440,9 +438,9 @@ async function _finishGame(winnerColor, fromDB = false) {
   
   try {
     const sb = getSupabase();
-
     if (!fromDB && window.CW_SESSION.matchId) {
-       await sb.from('matches').update({ 
+       // Fire & Forget de victoria
+       sb.from('matches').update({ 
            status: 'finished', 
            winner: winnerColor,
            board_state: window.CW_SESSION.board
@@ -461,7 +459,6 @@ async function _finishGame(winnerColor, fromDB = false) {
     </div>
   `;
   
-  // ⚡ ESCUDO 3 (DOBLE DISPARO): Aseguramos la muerte de la partida al presionar el botón de salida
   _$container.querySelector('#btn-exit').addEventListener('click', async () => {
     const $btn = _$container.querySelector('#btn-exit');
     const $err = _$container.querySelector('#board-error-log');
@@ -471,9 +468,9 @@ async function _finishGame(winnerColor, fromDB = false) {
       $btn.style.opacity = "0.7";
       $btn.style.pointerEvents = "none";
       
-      // DOBLE DISPARO A SUPABASE: Asegurarnos de que quede en 'finished' sí o sí
       if (window.CW_SESSION && window.CW_SESSION.matchId) {
           const sb = getSupabase();
+          // Aseguramos muerte definitiva de la partida
           await sb.from('matches').update({ status: 'finished' }).eq('id', window.CW_SESSION.matchId);
       }
       
