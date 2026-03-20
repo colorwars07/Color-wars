@@ -1,7 +1,8 @@
 /**
  * ═══════════════════════════════════════════════════════
  * COLOR WARS — js/game/board.js
- * CEREBRO MINIMAX (Simulador de Futuros y Cadenas)
+ * EL MONOLITO DE LA GUERRA: 
+ * HUD Rígido + Reloj Global (3 Min) + Desempate por Masa
  * ═══════════════════════════════════════════════════════
  */
 
@@ -14,10 +15,13 @@ let _active = false;
 let _currentTurn = 'pink';
 let _turnTimer = null;
 let _graceTimer = null;
+let _globalTimer = null; // ⏱️ El Reloj del Apocalipsis
 let _timeLeft = 10;
+let _globalTimeLeft = 180; // ⏱️ 3 Minutos (180 segundos)
 let _totalWait = 0;
 let _isAnimating = false;
 let _turnCount = 0;
+let _missedTurns = 0; // ⏱️ Ley Anti-AFK
 let _$container = null; 
 let _matchChannel = null; 
 
@@ -27,7 +31,8 @@ export async function initGameView($container) {
   _$container = $container;
   if (!window.CW_SESSION || !window.CW_SESSION.board) { setView('dashboard'); return; }
 
-  _active = true; _currentTurn = 'pink'; _isAnimating = false; _turnCount = 0;
+  _active = true; _currentTurn = 'pink'; _isAnimating = false; _turnCount = 0; _missedTurns = 0; 
+  _globalTimeLeft = 180; // Reiniciar los 3 minutos
   const sb = getSupabase();
 
   if (window.CW_SESSION.matchId) {
@@ -56,7 +61,9 @@ export async function initGameView($container) {
         }).subscribe();
     }
   }
-  renderHTML(); updateDOM(); _startTurn();
+  renderHTML(); updateDOM(); 
+  _startGlobalTimer(); // Arranca el conteo regresivo de 3 minutos
+  _startTurn();
 }
 
 function renderHTML() {
@@ -68,16 +75,31 @@ function renderHTML() {
   const rivalColorVar = myColor === 'pink' ? 'var(--blue)' : 'var(--pink)';
 
   _$container.innerHTML = `
-  <div class="game-arena" id="arena-main">
-    <div class="game-hud">
-      <div style="color:${youColorVar};font-weight:900;font-size:0.85rem;text-shadow:0 0 10px ${youColorVar}; text-transform:uppercase;">
-        ${escHtml(myName)}: <span id="score-you">0</span>
-      </div>
-      <div class="hud-timer">00:10</div>
-      <div style="color:${rivalColorVar};font-weight:900;font-size:0.85rem;text-shadow:0 0 10px ${rivalColorVar}; text-transform:uppercase;">
-        ${escHtml(rivalName)}: <span id="score-rival">0</span>
-      </div>
+  <div class="game-arena" id="arena-main" style="display:flex; flex-direction:column; align-items:center;">
+    
+    <div style="background: rgba(10, 10, 15, 0.85); border: 1px solid var(--border-ghost); border-radius: 14px; padding: 12px 15px; margin-bottom: 25px; width: 100%; max-width: 380px; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 8px 32px rgba(0,0,0,0.6);">
+        
+        <div style="display: flex; justify-content: space-between; align-items: center; height: 45px;">
+            <div style="display: flex; flex-direction: column; align-items: flex-start; width: 30%;">
+                <span style="color:${youColorVar}; font-size: 0.65rem; font-weight: 900; text-transform: uppercase; letter-spacing: 1px;">${escHtml(myName)}</span>
+                <span style="color: white; font-size: 1.4rem; font-weight: 900;" id="score-you">0</span>
+            </div>
+            
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; width: 40%;">
+                <span id="global-timer" style="color: #ffaa00; font-family: var(--font-display); font-size: 2rem; letter-spacing: 2px; text-shadow: 0 0 15px rgba(255,170,0,0.5); line-height: 1;">03:00</span>
+            </div>
+            
+            <div style="display: flex; flex-direction: column; align-items: flex-end; width: 30%;">
+                <span style="color:${rivalColorVar}; font-size: 0.65rem; font-weight: 900; text-transform: uppercase; letter-spacing: 1px;">${escHtml(rivalName)}</span>
+                <span style="color: white; font-size: 1.4rem; font-weight: 900;" id="score-rival">0</span>
+            </div>
+        </div>
+
+        <div style="height: 20px; display: flex; justify-content: center; align-items: center; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 8px;">
+            <span id="turn-indicator" style="font-family: var(--font-mono); font-size: 0.85rem; font-weight: bold; letter-spacing: 1px; color: white;">INICIANDO...</span>
+        </div>
     </div>
+
     <div class="board-wrap">
       <div class="board-grid" id="grid" style="display:grid; grid-template-columns:repeat(5,1fr); gap:5px;">
         ${window.CW_SESSION.board.map((row, r) => row.map((_, c) => `
@@ -85,7 +107,8 @@ function renderHTML() {
         `).join('')).join('')}
       </div>
     </div>
-    <button id="btn-surrender" class="btn btn-ghost" style="margin-top:20px;">🏳️ Abandonar</button>
+    
+    <button id="btn-surrender" class="btn btn-ghost" style="margin-top:25px;">🏳️ Abandonar</button>
   </div>`;
 
   _$container.querySelector('#grid').addEventListener('click', (e) => {
@@ -129,6 +152,85 @@ function updateDOM() {
   }
 }
 
+// ⏱️ EL RELOJ DEL APOCALIPSIS (3 Minutos)
+function _startGlobalTimer() {
+    clearInterval(_globalTimer);
+    _globalTimer = setInterval(() => {
+        if (!_active) return clearInterval(_globalTimer);
+        _globalTimeLeft--;
+        
+        let m = Math.floor(_globalTimeLeft / 60).toString().padStart(2, '0');
+        let s = (_globalTimeLeft % 60).toString().padStart(2, '0');
+        
+        const gt = _$container.querySelector('#global-timer');
+        if (gt) {
+            gt.textContent = `${m}:${s}`;
+            // Efecto de tensión en los últimos 30 segundos
+            if (_globalTimeLeft <= 30) {
+                gt.style.color = "#ff4444";
+                gt.style.textShadow = "0 0 15px rgba(255,68,68,0.8)";
+            }
+        }
+
+        if (_globalTimeLeft <= 0) {
+            clearInterval(_globalTimer);
+            _handleTimeOut(); // Se acabó el tiempo, evaluar la mesa
+        }
+    }, 1000);
+}
+
+// ⚖️ EL JUEZ DEL EMPATE (Calcula Celdas y Masa)
+function _handleTimeOut() {
+    if (!_active) return;
+    _active = false;
+    clearInterval(_turnTimer);
+    clearInterval(_graceTimer);
+    
+    let pCells = 0, bCells = 0, pMass = 0, bMass = 0;
+    const board = window.CW_SESSION.board;
+    
+    for (let r = 0; r < BOARD_SIZE; r++) {
+       for (let c = 0; c < BOARD_SIZE; c++) {
+           if (board[r][c].owner === 'pink') { pCells++; pMass += board[r][c].mass; }
+           else if (board[r][c].owner === 'blue') { bCells++; bMass += board[r][c].mass; }
+       }
+    }
+
+    let winner = null;
+    let title = "¡TIEMPO AGOTADO!";
+    let reason = "";
+
+    if (pCells > bCells) { 
+        winner = 'pink'; reason = `Gana por Dominio (${pCells} a ${bCells} casillas)`; 
+    } else if (bCells > pCells) { 
+        winner = 'blue'; reason = `Gana por Dominio (${bCells} a ${pCells} casillas)`; 
+    } else {
+        // ¡EMPATE DE TERRITORIOS! Desempate por puntos internos (Masa)
+        if (pMass > bMass) { 
+            winner = 'pink'; reason = `¡DESEMPATE! Gana por Masa Crítica (${pMass} a ${bMass} pts)`; 
+        } else if (bMass > pMass) { 
+            winner = 'blue'; reason = `¡DESEMPATE! Gana por Masa Crítica (${bMass} a ${pMass} pts)`; 
+        } else {
+            // Empate absoluto (Muy raro)
+            winner = Math.random() > 0.5 ? 'pink' : 'blue';
+            reason = `Empate Absoluto. Muerte Súbita al azar.`;
+        }
+    }
+
+    // Pantalla de Tensión antes de mostrar el ganador
+    _$container.innerHTML = `
+        <div class="result-screen" style="display:flex; flex-direction:column; justify-content:center; align-items:center; height:100vh; width: 100%; background:var(--bg-dark); position: absolute; top: 0; left: 0; z-index: 999;">
+          <h1 style="color:#ffaa00; font-family:var(--font-display); font-size: 2rem; text-shadow: 0 0 20px #ffaa00; text-align:center; margin-bottom: 10px;">¡CAMPANA FINAL!</h1>
+          <p style="color:white; font-family:var(--font-mono); text-transform:uppercase;">Calculando territorios y masa...</p>
+        </div>
+    `;
+
+    // A los 3 segundos, declara al ganador oficialmente
+    setTimeout(() => {
+        _finishGame(winner, false, reason);
+    }, 3000);
+}
+
 function handlePlayerClick(row, col) {
   const myColor = window.CW_SESSION.myColor;
   if (!_active || _isAnimating) return;
@@ -147,6 +249,8 @@ function handlePlayerClick(row, col) {
       return; 
   }
 
+  // ⏱️ Tocaste legalmente: El Contador Anti-AFK vuelve a cero
+  _missedTurns = 0; 
   clearInterval(_turnTimer); _addMass(row, col, myColor);
 }
 
@@ -161,7 +265,24 @@ function _startTurn() {
   if (_currentTurn === myColor) {
     _turnTimer = setInterval(() => {
       _timeLeft--; updateTimerUI();
-      if (_timeLeft <= 0) { clearInterval(_turnTimer); _passTurn(); }
+      if (_timeLeft <= 0) { 
+          clearInterval(_turnTimer); 
+          
+          // ⏱️ LEY DE INACTIVIDAD
+          _missedTurns++;
+          
+          if (_missedTurns >= 4) {
+              showToast('Descalificado por inactividad', 'error');
+              _finishGame(botColor, false, "Descalificación por Inactividad (AFK)");
+          } else {
+              if (_missedTurns === 3) {
+                  showToast('¡⚠️ ÚLTIMO AVISO! Juega o pierdes', 'warning');
+              } else {
+                  showToast(`Turno saltado (${_missedTurns}/4)`, 'warning');
+              }
+              _passTurn();
+          }
+      }
     }, 1000);
   } else {
     if (!window.CW_SESSION.isBotMatch) {
@@ -180,27 +301,31 @@ function _startTurn() {
   }
 }
 
+// 📏 HUD TEXT MODIFIER (Rigid Update)
 function updateTimerUI(graceTime = null) {
-  const el = _$container.querySelector('.hud-timer');
+  const el = _$container.querySelector('#turn-indicator');
   const myColor = window.CW_SESSION.myColor;
   if (!el) return;
 
   if (graceTime !== null) {
-    el.innerHTML = `<span style="font-size:0.6rem;">DESCONECTADO</span><br>${graceTime}s`;
-    el.style.color = "var(--pink)"; el.classList.add('urgent'); return;
+    el.textContent = `DESCONECTADO: ${graceTime}s`;
+    el.style.color = "var(--pink)"; return;
   }
 
   if (_currentTurn === myColor) {
-    el.textContent = `TU TURNO: ${_timeLeft.toString().padStart(2, '0')}`; el.style.color = "white";
+    el.innerHTML = `TU TURNO: <span style="color:var(--text-bright); font-size:1.1em;">${_timeLeft.toString().padStart(2, '0')}</span>`; 
+    el.style.color = "var(--text-bright)";
   } else {
-    el.textContent = `ESPERANDO: ${_timeLeft.toString().padStart(2, '0')}`; el.style.color = "var(--text-dim)";
+    el.innerHTML = `ESPERANDO RIVAL: <span style="color:var(--text-dim);">${_timeLeft.toString().padStart(2, '0')}</span>`; 
+    el.style.color = "var(--text-dim)";
   }
-  if (_timeLeft <= 3) el.classList.add('urgent'); else el.classList.remove('urgent');
+  
+  if (_timeLeft <= 3 && _currentTurn === myColor) el.style.color = "#ff4444";
 }
 
 async function claimForfeitVictory() {
   if (!_active) return;
-  _finishGame(window.CW_SESSION.myColor, false);
+  _finishGame(window.CW_SESSION.myColor, false, "El rival se desconectó");
 }
 
 async function _passTurn() {
@@ -213,7 +338,7 @@ async function _passTurn() {
      if (window.CW_SESSION.matchId) {
          const sb = getSupabase();
          sb.from('matches').update({ board_state: window.CW_SESSION.board, current_turn: nextTurn })
-           .eq('id', window.CW_SESSION.matchId).then(({error}) => { if(error) console.error("Error de sync:", error); });
+           .eq('id', window.CW_SESSION.matchId).catch(()=>{});
      }
      _startTurn();
   }
@@ -254,15 +379,13 @@ async function _explode(row, col, color) {
 }
 
 // ═════════════════════════════════════════════════════════
-// 🧠 MOTOR MINIMAX (SIMULADOR DE FUTURO Y REACCIONES EN CADENA)
+// 🧠 MOTOR MINIMAX (Gran Maestro de Ajedrez)
 // ═════════════════════════════════════════════════════════
 
-// Clonar el tablero en la mente del Bot
 function _cloneBoard(board) {
   return board.map(row => row.map(cell => ({ owner: cell.owner, mass: cell.mass })));
 }
 
-// Conseguir los movimientos legales de un color
 function _getValidMoves(board, color) {
   let moves = [];
   let hasCells = false;
@@ -283,7 +406,6 @@ function _getValidMoves(board, color) {
   return moves;
 }
 
-// Simular CÓMO EXPLOTARÍA el tablero mentalmente en un milisegundo
 function _simulateMove(board, r, c, color) {
   let temp = _cloneBoard(board);
   let queue = [{r, c, color}];
@@ -309,24 +431,22 @@ function _simulateMove(board, r, c, color) {
   return temp;
 }
 
-// Evaluar quién va ganando en ese tablero imaginario
 function _evaluateBoard(board, botColor, enemyColor) {
-  let botScore = 0;
-  let enemyScore = 0;
+  let botScore = 0; let enemyScore = 0;
   for (let r=0; r<BOARD_SIZE; r++) {
     for (let c=0; c<BOARD_SIZE; c++) {
       let cell = board[r][c];
       if (cell.owner === botColor) {
         botScore += (cell.mass * 10);
-        if (cell.mass === 3) botScore += 50; // Valora las bombas listas
+        if (cell.mass === 3) botScore += 50; 
       } else if (cell.owner === enemyColor) {
         enemyScore += (cell.mass * 10);
         if (cell.mass === 3) enemyScore += 50;
       }
     }
   }
-  if (botScore > 0 && enemyScore === 0) return 999999; // Win instantáneo
-  if (enemyScore > 0 && botScore === 0) return -999999; // Muerte instantánea
+  if (botScore > 0 && enemyScore === 0) return 999999; 
+  if (enemyScore > 0 && botScore === 0) return -999999; 
   return botScore - enemyScore;
 }
 
@@ -339,7 +459,6 @@ function _botMove() {
     let validMoves = _getValidMoves(board, botColor);
     if (validMoves.length === 0) { _passTurn(); return; }
 
-    // Si es su primerísimo turno y el centro está vacío, atrápalo
     if (validMoves.length === 25 && !board[2][2].owner) {
       _addMass(2, 2, botColor); return;
     }
@@ -348,37 +467,25 @@ function _botMove() {
     let bestScore = -Infinity;
 
     for (const move of validMoves) {
-      // 1. Simula SU propio movimiento
       let simBoard1 = _simulateMove(board, move.r, move.c, botColor);
-
-      // Si este movimiento aniquila al jugador de una vez (y no es el turno 1), TÓMALO SIN PENSAR
       let eval1 = _evaluateBoard(simBoard1, botColor, enemyColor);
+      
       if (eval1 > 900000 && _turnCount >= 2) {
-         _addMass(move.r, move.c, botColor);
-         return;
+         _addMass(move.r, move.c, botColor); return;
       }
 
-      // 2. Simula TODAS LAS RESPUESTAS POSIBLES que tú (el enemigo) podrías hacerle
       let enemyMoves = _getValidMoves(simBoard1, enemyColor);
       let worstCaseScore = Infinity;
 
       for (const eMove of enemyMoves) {
          let simBoard2 = _simulateMove(simBoard1, eMove.r, eMove.c, enemyColor);
          let eval2 = _evaluateBoard(simBoard2, botColor, enemyColor);
-         
-         // El Bot asume que tú eres inteligentísimo y que elegirás la jugada que más daño le haga
-         if (eval2 < worstCaseScore) {
-             worstCaseScore = eval2; 
-         }
+         if (eval2 < worstCaseScore) worstCaseScore = eval2; 
       }
 
-      // Si después de su movimiento, a ti no te quedan fichas, él ya ganó
       if (enemyMoves.length === 0) worstCaseScore = 999999;
-
-      // Un toque micro-aleatorio para que no juegue como un robot aburrido
       worstCaseScore += Math.random();
 
-      // El Bot elige el camino donde TU MEJOR RESPUESTA sea la menos dolorosa para él
       if (worstCaseScore > bestScore) {
          bestScore = worstCaseScore;
          bestMove = move;
@@ -386,7 +493,7 @@ function _botMove() {
     }
 
     if (bestMove) { _addMass(bestMove.r, bestMove.c, botColor); } 
-    else { _addMass(validMoves[0].r, validMoves[0].c, botColor); } // Seguro
+    else { _addMass(validMoves[0].r, validMoves[0].c, botColor); } 
 
   } catch (err) { console.error("Error en Motor Cuántico:", err); _passTurn(); }
 }
@@ -407,20 +514,21 @@ function _checkGameOver() {
   return false;
 }
 
-async function _finishGame(winnerColor, fromDB = false) {
+// ⚡ SALIDA BLINDADA CON RAZÓN DE VICTORIA
+async function _finishGame(winnerColor, fromDB = false, customReason = null) {
   if (!_active) return; 
   _active = false;
   
-  clearInterval(_turnTimer); clearInterval(_graceTimer);
+  clearInterval(_turnTimer); clearInterval(_graceTimer); clearInterval(_globalTimer);
   if (_matchChannel) _matchChannel.unsubscribe();
   
   const myColor = window.CW_SESSION.myColor;
   const win = winnerColor === myColor;
+  const displayReason = customReason ? customReason : (win ? '+50 CP acreditados' : 'Perdiste la batalla');
 
   _$container.innerHTML = `
     <div class="result-screen" style="display:flex; flex-direction:column; justify-content:center; align-items:center; height:100vh; width: 100%; background:var(--bg-dark); position: absolute; top: 0; left: 0; z-index: 999;">
       <h1 class="result-title" style="color:var(--text-dim); font-size: 1.4rem;">PROCESANDO...</h1>
-      <p style="color:var(--text-dim);font-family:var(--font-mono);margin-bottom:2rem; text-align:center;">Guardando partida en el servidor</p>
     </div>
   `;
   
@@ -436,7 +544,7 @@ async function _finishGame(winnerColor, fromDB = false) {
   _$container.innerHTML = `
     <div class="result-screen" style="display:flex; flex-direction:column; justify-content:center; align-items:center; height:100vh; width: 100%; background:var(--bg-dark); position: absolute; top: 0; left: 0; z-index: 999;">
       <h1 class="result-title ${win ? 'result-win' : 'result-lose'}">${win ? '¡VICTORIA!' : 'DERROTA'}</h1>
-      <p style="color:var(--text-dim);font-family:var(--font-mono);margin-bottom:2rem; text-align:center;">${win ? '+50 CP acreditados' : 'Perdiste la batalla'}</p>
+      <p style="color:var(--text-dim);font-family:var(--font-mono);margin-bottom:2rem; text-align:center; max-width: 80%;">${displayReason}</p>
       <button class="btn btn-primary" id="btn-exit" style="width:200px;">VOLVER AL INICIO</button>
     </div>
   `;
