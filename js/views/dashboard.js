@@ -1,7 +1,7 @@
 /**
  * ═══════════════════════════════════════════════════════
  * COLOR WARS — js/views/dashboard.js
- * TIENDA ÉLITE CP + LISTA DE BANCOS CUSTOM + ECONOMÍA 30/50
+ * TIENDA ÉLITE CP + LISTA DE BANCOS + RETIRO MÍNIMO 200
  * ═══════════════════════════════════════════════════════
  */
 
@@ -396,7 +396,7 @@ async function submitStorePurchase(usd, cpAmount, rate) {
   }
 }
 
-// ⚡ MODAL DE CANJEO CON LISTA DE BANCOS CUSTOM
+// ⚡ MODAL DE CANJEO CON RETIRO MÍNIMO 200 CP
 function openWithdrawModal() {
   const profile = getProfile();
   const cpBalance = Number(profile.wallet_bs || 0);
@@ -421,7 +421,8 @@ function openWithdrawModal() {
 
     <div class="field-group">
       <label class="field-label" for="wd-amount">Cantidad de CP a canjear</label>
-      <input id="wd-amount" type="number" min="1" step="1" class="input-field" placeholder="Ej: 500" inputmode="decimal" style="border-color:#ff00ff;" />
+      <input id="wd-amount" type="number" min="200" step="1" class="input-field" placeholder="Mínimo: 200 CP" inputmode="decimal" style="border-color:#ff00ff;" />
+      <p style="font-family:var(--font-mono); font-size:0.55rem; color:#ff4444; margin-top:5px;">* El retiro mínimo es de 200 CP</p>
     </div>
 
     <div id="wd-calc" style="background:rgba(255,0,255,0.1); border:1px solid #ff00ff; border-radius:10px; padding:10px; text-align:center; margin-bottom:15px; display:none;">
@@ -451,7 +452,6 @@ function openWithdrawModal() {
       SOLICITAR CANJE
     </button>`, { closable: true });
 
-  // Lógica de la calculadora de retiro
   const $amount = document.getElementById('wd-amount');
   const $calc = document.getElementById('wd-calc');
   const $bsRes = document.getElementById('wd-bs-result');
@@ -468,7 +468,6 @@ function openWithdrawModal() {
     }
   });
 
-  // Lógica del Dropdown de Bancos Custom
   const $bankInput = document.getElementById('wd-bank');
   const $bankDropdown = document.getElementById('bank-dropdown');
 
@@ -490,7 +489,6 @@ function openWithdrawModal() {
   $bankInput.addEventListener('focus', () => { renderBanks($bankInput.value); $bankDropdown.style.display = 'block'; });
   $bankInput.addEventListener('input', (e) => { renderBanks(e.target.value); $bankDropdown.style.display = 'block'; });
 
-  // Cierra la lista si tocas por fuera
   document.addEventListener('click', (e) => {
       const wrapper = document.querySelector('.custom-select-wrapper');
       if (wrapper && $bankDropdown && !wrapper.contains(e.target)) {
@@ -514,7 +512,8 @@ async function submitWithdraw() {
 
   $err.textContent = '';
 
-  if (isNaN(amountCP) || amountCP <= 0)  { $err.textContent = 'Monto de CP inválido.'; return; }
+  // ⚡ LA REGLA DE ORO: EL RETIRO MÍNIMO ES DE 200 CP
+  if (isNaN(amountCP) || amountCP < 200) { $err.textContent = 'El retiro mínimo es de 200 CP.'; return; }
   if (amountCP > cpBalance)              { $err.textContent = `Insuficientes CP. Tienes ${cpBalance}.`; return; }
   if (!bank)                             { $err.textContent = 'Ingresa el banco.'; return; }
   if (!phone)                            { $err.textContent = 'Ingresa el teléfono.'; return; }
