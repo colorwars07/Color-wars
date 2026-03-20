@@ -1,7 +1,7 @@
 /**
  * ═══════════════════════════════════════════════════════
  * COLOR WARS — js/views/dashboard.js
- * TIENDA ÉLITE CP + ORDEN OPTIMIZADO + CALCULADORA RETIROS
+ * TIENDA ÉLITE CP + LISTA DE BANCOS CUSTOM + ECONOMÍA 30/50
  * ═══════════════════════════════════════════════════════
  */
 
@@ -96,8 +96,12 @@ function injectStoreStyles() {
     @keyframes float { 0% { transform: translateY(0); } 50% { transform: translateY(-8px); } 100% { transform: translateY(0); } }
     .cp-logo-text { background: -webkit-linear-gradient(45deg, #00f0ff, #ff00ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
     
-    /* Hack visual para ocultar la billetera vieja del menú superior */
     header .wallet, header .balance-usd, .top-bar-wallet { display: none !important; opacity: 0 !important; }
+    
+    /* Estilos para la lista de bancos personalizada */
+    .bank-option { padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.1); color: white; font-family: var(--font-mono); font-size: 0.75rem; text-align: left; cursor: pointer; transition: background 0.2s; }
+    .bank-option:hover { background: rgba(255,0,255,0.2); }
+    .bank-option:last-child { border-bottom: none; }
   `;
   document.head.appendChild(style);
 }
@@ -113,7 +117,6 @@ function render($c) {
   const total = wins + losses;
   const winPct = total > 0 ? Math.round(wins / total * 100) : 0;
 
-  // NUEVA ECONOMÍA VISUAL (30 CP ENTRADA / 50 CP PREMIO)
   const ENTRY_COST = 30;
   const REWARD = 50;
 
@@ -196,7 +199,6 @@ function attachEvents($c) {
   $c.querySelector('#btn-withdraw')?.addEventListener('click', openWithdrawModal);
   $c.querySelector('#btn-battle')?.addEventListener('click',   () => {
     const profile = getProfile();
-    // Validamos que tenga los 30 CP
     if (Number(profile.wallet_bs) < 30) {
       showToast(`Necesitas 30 CP para jugar.`, 'warning');
       return;
@@ -394,23 +396,20 @@ async function submitStorePurchase(usd, cpAmount, rate) {
   }
 }
 
-// ⚡ MODAL DE CANJEO CON CALCULADORA Y LISTA DE BANCOS NATIVA
+// ⚡ MODAL DE CANJEO CON LISTA DE BANCOS CUSTOM
 function openWithdrawModal() {
   const profile = getProfile();
   const cpBalance = Number(profile.wallet_bs || 0);
   const rate = getBcvRate();
 
   const BANKS = [
-    "0102 - BANCO DE VENEZUELA", "0156 - 100% BANCO", "0172 - BANCAMIGA BANCO UNIVERSAL, C.A.",
+    "0102 - BANCO DE VENEZUELA", "0156 - 100% BANCO", "0172 - BANCAMIGA BANCO UNIVERSAL",
     "0114 - BANCARIBE", "0171 - BANCO ACTIVO", "0128 - BANCO CARONÍ", "0163 - BANCO DEL TESORO",
-    "0175 - BANCO DIGITAL DE LOS TRABAJADORES, BANCO UNIVERSAL", "0115 - BANCO EXTERIOR",
+    "0175 - BANCO DIGITAL DE LOS TRABAJADORES", "0115 - BANCO EXTERIOR",
     "0151 - BANCO FONDO COMÚN", "0105 - BANCO MERCANTIL", "0191 - BANCO NACIONAL DE CREDITO",
     "0138 - BANCO PLAZA", "0137 - BANCO SOFITASA", "0104 - BANCO VENEZOLANO DE CREDITO",
     "0168 - BANCRECER", "0134 - BANESCO", "0177 - BANFANB", "0146 - BANGENTE", "0174 - BANPLUS",
-    "0108 - BBVA PROVINCIAL", "0157 - DELSUR BANCO UNIVERSAL",
-    "0601 - INSTITUTO MUNICIPAL DE CREDITO POPULAR",
-    "0178 - N58 BANCO DIGITAL BANCO MICROFINANCIERO S A",
-    "0169 - R4 BANCO MICROFINANCIERO C.A."
+    "0108 - BBVA PROVINCIAL", "0157 - DELSUR BANCO UNIVERSAL"
   ];
 
   showModal(`
@@ -431,13 +430,13 @@ function openWithdrawModal() {
       <p style="font-family:var(--font-mono); font-size:0.6rem; color:var(--text-ghost);">(Tasa BCV: <span id="wd-rate">${rate}</span> Bs/$)</p>
     </div>
 
-    <div class="field-group">
+    <div class="field-group custom-select-wrapper" style="position:relative;">
       <label class="field-label" for="wd-bank">Banco Destino</label>
-      <input id="wd-bank" list="banks-list" class="input-field" placeholder="Escribe el código o selecciona..." />
-      <datalist id="banks-list">
-        ${BANKS.map(b => `<option value="${b}">`).join('')}
-      </datalist>
+      <input type="text" id="wd-bank" class="input-field" placeholder="Escribe o selecciona un banco..." autocomplete="off" />
+      <span style="position:absolute; right:15px; top:35px; color:var(--text-dim); pointer-events:none;">▼</span>
+      <div id="bank-dropdown" style="display:none; position:absolute; top:100%; left:0; right:0; background:#11111a; border:1px solid #ff00ff; z-index:100; max-height:200px; overflow-y:auto; border-radius:8px; margin-top:5px; box-shadow:0 10px 25px rgba(0,0,0,0.9);"></div>
     </div>
+
     <div class="field-group">
       <label class="field-label" for="wd-phone">Teléfono (Pago Móvil)</label>
       <input id="wd-phone" type="tel" class="input-field" placeholder="04XX-XXXXXXX" inputmode="tel" />
@@ -460,7 +459,6 @@ function openWithdrawModal() {
   $amount?.addEventListener('input', () => {
     const cp = parseFloat($amount.value);
     if (!isNaN(cp) && cp > 0) {
-      // 100 CP = 1 USD
       const usd = cp / 100;
       const bs = (usd * rate).toFixed(2);
       $bsRes.textContent = parseFloat(bs).toLocaleString('es-VE') + ' Bs';
@@ -468,6 +466,36 @@ function openWithdrawModal() {
     } else {
       $calc.style.display = 'none';
     }
+  });
+
+  // Lógica del Dropdown de Bancos Custom
+  const $bankInput = document.getElementById('wd-bank');
+  const $bankDropdown = document.getElementById('bank-dropdown');
+
+  function renderBanks(filterText = '') {
+      $bankDropdown.innerHTML = '';
+      const filtered = BANKS.filter(b => b.toLowerCase().includes(filterText.toLowerCase()));
+      filtered.forEach(b => {
+          const div = document.createElement('div');
+          div.className = 'bank-option';
+          div.textContent = b;
+          div.onclick = () => {
+              $bankInput.value = b;
+              $bankDropdown.style.display = 'none';
+          };
+          $bankDropdown.appendChild(div);
+      });
+  }
+
+  $bankInput.addEventListener('focus', () => { renderBanks($bankInput.value); $bankDropdown.style.display = 'block'; });
+  $bankInput.addEventListener('input', (e) => { renderBanks(e.target.value); $bankDropdown.style.display = 'block'; });
+
+  // Cierra la lista si tocas por fuera
+  document.addEventListener('click', (e) => {
+      const wrapper = document.querySelector('.custom-select-wrapper');
+      if (wrapper && $bankDropdown && !wrapper.contains(e.target)) {
+          $bankDropdown.style.display = 'none';
+      }
   });
 
   document.getElementById('btn-wd-submit')?.addEventListener('click', submitWithdraw);
