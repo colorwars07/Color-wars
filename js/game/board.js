@@ -1,7 +1,7 @@
 /**
  * ═══════════════════════════════════════════════════════
  * COLOR WARS — js/game/board.js
- * MONOLITO MAESTRO: TIEMPO ABSOLUTO + PRESENCE (40s) + MINIMAX
+ * MONOLITO MAESTRO: OPTIMIZACIÓN UI + ANTI-AFK BLINDADO
  * ═══════════════════════════════════════════════════════
  */
 
@@ -20,9 +20,9 @@ let _$container = null;
 // Canales y Relojes
 let _matchChannel = null; 
 let _presenceChannel = null;
-let _masterClockTimer = null; // El único setInterval que controla todo el tiempo
+let _masterClockTimer = null; 
 let _isPaused = false;
-let _disconnectTimer = 40; // Reloj de emergencia
+let _isHandlingTimeout = false; // Candado Anti-Doble Cobro
 
 // Tiempos Absolutos desde DB
 let _dbStartTime = null;
@@ -36,7 +36,7 @@ export async function initGameView($container) {
   _$container = $container;
   if (!window.CW_SESSION || !window.CW_SESSION.board) { setView('dashboard'); return; }
 
-  _active = true; _isAnimating = false; _turnCount = 0; _missedTurns = 0; _isPaused = false;
+  _active = true; _isAnimating = false; _turnCount = 0; _missedTurns = 0; _isPaused = false; _isHandlingTimeout = false;
   const sb = getSupabase();
 
   if (window.CW_SESSION.matchId) {
@@ -47,13 +47,11 @@ export async function initGameView($container) {
         window.CW_SESSION.board = matchData.board_state || window.CW_SESSION.board;
         _currentTurn = matchData.current_turn || 'pink';
         
-        // Cargar tiempos de la base de datos
         _dbStartTime = matchData.match_start_time ? new Date(matchData.match_start_time).getTime() : Date.now();
         _dbLastMoveTime = matchData.last_move_time ? new Date(matchData.last_move_time).getTime() : Date.now();
         _dbPausedAt = matchData.paused_at ? new Date(matchData.paused_at).getTime() : null;
         _dbTotalPausedSecs = matchData.total_paused_seconds || 0;
 
-        // Si es el primerísimo turno, sellamos la hora de inicio en Supabase
         if (!matchData.match_start_time) {
             await sb.from('matches').update({ 
                 match_start_time: new Date(_dbStartTime).toISOString(),
@@ -67,10 +65,7 @@ export async function initGameView($container) {
       }
     } catch(e) { console.error("Error cargando partida", e); }
 
-    // DETECTOR DE LATIDOS Y CAMBIOS (Si es contra otro humano)
     if (!window.CW_SESSION.isBotMatch) {
-      
-      // 1. Escuchar jugadas del rival
       _matchChannel = sb.channel(`game_${window.CW_SESSION.matchId}`)
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches', filter: `id=eq.${window.CW_SESSION.matchId}` }, (payload) => {
           const newData = payload.new;
@@ -83,24 +78,17 @@ export async function initGameView($container) {
              window.CW_SESSION.board = newData.board_state; 
              _currentTurn = newData.current_turn;
              _dbLastMoveTime = new Date(newData.last_move_time).getTime();
-             _missedTurns = 0; // Se reinicia el AFK al cambiar de turno
+             _missedTurns = 0; 
              updateDOM(); 
           }
         }).subscribe();
 
-      // 2. Escuchar conexión/desconexión (Presence)
       _presenceChannel = sb.channel(`presence_${window.CW_SESSION.matchId}`);
       _presenceChannel.on('presence', { event: 'sync' }, () => {
           const state = _presenceChannel.presenceState();
           const onlineCount = Object.keys(state).length;
-          
-          if (onlineCount < 2 && !_dbPausedAt) {
-              // El rival se cayó. Congelamos la partida.
-              _triggerDisconnect(true);
-          } else if (onlineCount >= 2 && _dbPausedAt) {
-              // El rival volvió. Descongelamos.
-              _triggerDisconnect(false);
-          }
+          if (onlineCount < 2 && !_dbPausedAt) { _triggerDisconnect(true); } 
+          else if (onlineCount >= 2 && _dbPausedAt) { _triggerDisconnect(false); }
       });
       _presenceChannel.subscribe(async (status) => {
           if (status === 'SUBSCRIBED') await _presenceChannel.track({ user: window.CW_SESSION.myColor, online_at: new Date().toISOString() });
@@ -109,7 +97,7 @@ export async function initGameView($container) {
   }
 
   renderHTML(); updateDOM(); 
-  _startMasterClock(); // Arranca el motor del tiempo absoluto
+  _startMasterClock(); 
 }
 
 function renderHTML() {
@@ -177,34 +165,24 @@ function updateDOM() {
   else { if(sy) sy.textContent = bScore; if(sr) sr.textContent = pScore; }
 }
 
-// 📡 SISTEMA DE DESCONEXIÓN Y CONGELAMIENTO
 async function _triggerDisconnect(isDisconnected) {
     if (!_active || window.CW_SESSION.isBotMatch) return;
     const sb = getSupabase();
-    
     if (isDisconnected) {
-        _isPaused = true;
-        _dbPausedAt = Date.now();
+        _isPaused = true; _dbPausedAt = Date.now();
         _$container.querySelector('#disconnect-overlay').style.display = 'flex';
         await sb.from('matches').update({ paused_at: new Date(_dbPausedAt).toISOString() }).eq('id', window.CW_SESSION.matchId);
     } else {
         _isPaused = false;
         _$container.querySelector('#disconnect-overlay').style.display = 'none';
         if (_dbPausedAt) {
-            // Calcular cuánto tiempo estuvo congelado y guardarlo en la bóveda
-            const pausedDuration = Math.floor((Date.now() - _dbPausedAt) / 1000);
-            _dbTotalPausedSecs += pausedDuration;
+            _dbTotalPausedSecs += Math.floor((Date.now() - _dbPausedAt) / 1000);
             _dbPausedAt = null;
-            // Se actualiza la base de datos para que el tiempo sea justo
-            await sb.from('matches').update({ 
-                paused_at: null, 
-                total_paused_seconds: _dbTotalPausedSecs 
-            }).eq('id', window.CW_SESSION.matchId);
+            await sb.from('matches').update({ paused_at: null, total_paused_seconds: _dbTotalPausedSecs }).eq('id', window.CW_SESSION.matchId);
         }
     }
 }
 
-// ⏱️ EL RELOJ MAESTRO (Controla TODO basado en la hora real)
 function _startMasterClock() {
     clearInterval(_masterClockTimer);
     _masterClockTimer = setInterval(() => {
@@ -212,41 +190,31 @@ function _startMasterClock() {
 
         const now = Date.now();
 
-        // 1. Lógica del Reloj de Desconexión (Los 40 segundos)
         if (_isPaused && _dbPausedAt) {
-            let offlineSecs = Math.floor((now - _dbPausedAt) / 1000);
-            let left = 40 - offlineSecs;
+            let left = 40 - Math.floor((now - _dbPausedAt) / 1000);
             const dTimer = _$container.querySelector('#disconnect-timer');
             if (dTimer) dTimer.textContent = left > 0 ? left : 0;
-            
-            if (left <= 0) {
-                // Pasaron los 40s. El que está vivo gana.
+            if (left <= 0 && !_isHandlingTimeout) {
+                _isHandlingTimeout = true;
                 _finishGame(window.CW_SESSION.myColor, false, "El rival se desconectó y no volvió");
             }
-            return; // Si está en pausa, no calcules los demás relojes.
+            return; 
         }
 
-        // 2. Lógica del Reloj Global (3 Minutos)
-        let elapsedGlobalSecs = Math.floor((now - _dbStartTime) / 1000) - _dbTotalPausedSecs;
-        let globalLeft = 180 - elapsedGlobalSecs;
-        
+        let globalLeft = 180 - (Math.floor((now - _dbStartTime) / 1000) - _dbTotalPausedSecs);
         const gt = _$container.querySelector('#global-timer');
         if (gt) {
             if (globalLeft < 0) globalLeft = 0;
-            let m = Math.floor(globalLeft / 60).toString().padStart(2, '0');
-            let s = (globalLeft % 60).toString().padStart(2, '0');
-            gt.textContent = `${m}:${s}`;
+            gt.textContent = `${Math.floor(globalLeft / 60).toString().padStart(2, '0')}:${(globalLeft % 60).toString().padStart(2, '0')}`;
             if (globalLeft <= 30) gt.style.color = "#ff4444";
         }
         
-        if (globalLeft <= 0) {
+        if (globalLeft <= 0 && !_isHandlingTimeout) {
+            _isHandlingTimeout = true;
             _handleTimeOut(); return;
         }
 
-        // 3. Lógica del Reloj de Turno (10 Segundos)
-        let elapsedTurnSecs = Math.floor((now - _dbLastMoveTime) / 1000);
-        let turnLeft = 10 - elapsedTurnSecs;
-        
+        let turnLeft = 10 - Math.floor((now - _dbLastMoveTime) / 1000);
         const turnEl = _$container.querySelector('#turn-indicator');
         const isMyTurn = _currentTurn === window.CW_SESSION.myColor;
 
@@ -261,70 +229,50 @@ function _startMasterClock() {
             }
         }
 
-        // ¿Qué pasa si el turno llega a cero?
-        if (turnLeft <= 0) {
+        // CANDADO ANTI-DOBLE COBRO: Verificamos _isHandlingTimeout
+        if (turnLeft <= 0 && !_isHandlingTimeout) {
+            _isHandlingTimeout = true; // Bloqueamos para que no corra dos veces
+            
             if (isMyTurn) {
-                // Tú perdiste el tiempo. Se reinicia tu reloj y te sumamos un AFK.
-                _dbLastMoveTime = now; // Reiniciamos el reloj para el próximo turno
                 _missedTurns++;
+                _dbLastMoveTime = now; 
                 
                 if (_missedTurns >= 4) {
                     _finishGame(window.CW_SESSION.myColor === 'pink' ? 'blue' : 'pink', false, "Descalificación por Inactividad (AFK)");
                 } else {
                     if (_missedTurns === 3) showToast('¡⚠️ ÚLTIMO AVISO! Juega o pierdes', 'warning');
                     else showToast(`Turno saltado (${_missedTurns}/4)`, 'warning');
-                    _passTurn();
+                    _passTurn().then(() => { _isHandlingTimeout = false; }); // Desbloqueamos al cambiar de turno
                 }
             } else if (window.CW_SESSION.isBotMatch) {
-                // Es el bot, y se le acabó el tiempo (seguro de vida)
                 _botMove(); 
+                _isHandlingTimeout = false;
+            } else {
+                _isHandlingTimeout = false;
             }
         }
 
-        // 4. Inteligencia del Bot (Juega a los 2 segundos de su turno para que parezca humano)
-        if (window.CW_SESSION.isBotMatch && !isMyTurn && turnLeft === 8 && !_isAnimating) {
-            _botMove();
-        }
+        if (window.CW_SESSION.isBotMatch && !isMyTurn && turnLeft === 8 && !_isAnimating) { _botMove(); }
 
-    }, 1000); // El reloj se recalcula cada segundo basándose en la HORA REAL.
+    }, 1000); 
 }
 
-// ⚖️ EL JUEZ DEL EMPATE (Calcula Celdas y Masa)
 function _handleTimeOut() {
-    if (!_active) return;
-    _active = false;
-    clearInterval(_masterClockTimer);
-    
     let pCells = 0, bCells = 0, pMass = 0, bMass = 0;
-    const board = window.CW_SESSION.board;
-    
-    for (let r = 0; r < BOARD_SIZE; r++) {
-       for (let c = 0; c < BOARD_SIZE; c++) {
-           if (board[r][c].owner === 'pink') { pCells++; pMass += board[r][c].mass; }
-           else if (board[r][c].owner === 'blue') { bCells++; bMass += board[r][c].mass; }
-       }
-    }
+    window.CW_SESSION.board.forEach(row => row.forEach(c => {
+        if (c.owner === 'pink') { pCells++; pMass += c.mass; }
+        else if (c.owner === 'blue') { bCells++; bMass += c.mass; }
+    }));
 
     let winner = null; let reason = "";
-
-    if (pCells > bCells) { winner = 'pink'; reason = `Gana por Dominio (${pCells} a ${bCells} casillas)`; } 
-    else if (bCells > pCells) { winner = 'blue'; reason = `Gana por Dominio (${bCells} a ${pCells} casillas)`; } 
+    if (pCells > bCells) { winner = 'pink'; reason = `Dominio (${pCells} a ${bCells} casillas)`; } 
+    else if (bCells > pCells) { winner = 'blue'; reason = `Dominio (${bCells} a ${pCells} casillas)`; } 
     else {
-        if (pMass > bMass) { winner = 'pink'; reason = `¡DESEMPATE! Gana por Masa Crítica (${pMass} a ${bMass} pts)`; } 
-        else if (bMass > pMass) { winner = 'blue'; reason = `¡DESEMPATE! Gana por Masa Crítica (${bMass} a ${pMass} pts)`; } 
-        else {
-            winner = Math.random() > 0.5 ? 'pink' : 'blue'; reason = `Empate Absoluto. Victoria por decisión.`;
-        }
+        if (pMass > bMass) { winner = 'pink'; reason = `Masa Crítica (${pMass} a ${bMass} pts)`; } 
+        else if (bMass > pMass) { winner = 'blue'; reason = `Masa Crítica (${bMass} a ${pMass} pts)`; } 
+        else { winner = Math.random() > 0.5 ? 'pink' : 'blue'; reason = `Empate Absoluto. Decisión al azar.`; }
     }
-
-    _$container.innerHTML += `
-        <div class="result-screen" style="display:flex; flex-direction:column; justify-content:center; align-items:center; height:100vh; width: 100%; background:var(--bg-dark); position: absolute; top: 0; left: 0; z-index: 999;">
-          <h1 style="color:#ffaa00; font-family:var(--font-display); font-size: 2rem; text-shadow: 0 0 20px #ffaa00; text-align:center; margin-bottom: 10px;">¡CAMPANA FINAL!</h1>
-          <p style="color:white; font-family:var(--font-mono); text-transform:uppercase;">Calculando territorios y masa...</p>
-        </div>
-    `;
-
-    setTimeout(() => { _finishGame(winner, false, reason); }, 3000);
+    _finishGame(winner, false, `TIEMPO AGOTADO: ${reason}`);
 }
 
 function handlePlayerClick(row, col) {
@@ -336,14 +284,10 @@ function handlePlayerClick(row, col) {
   if (cell.owner && cell.owner !== myColor) { showToast('Casilla enemiga', 'error'); return; }
 
   let myCellsCount = 0;
-  for (let r = 0; r < BOARD_SIZE; r++) {
-    for (let c = 0; c < BOARD_SIZE; c++) { if (window.CW_SESSION.board[r][c].owner === myColor) myCellsCount++; }
-  }
-  
+  for (let r = 0; r < BOARD_SIZE; r++) { for (let c = 0; c < BOARD_SIZE; c++) { if (window.CW_SESSION.board[r][c].owner === myColor) myCellsCount++; } }
   if (myCellsCount > 0 && cell.owner !== myColor) { showToast('Debes expandir tus propias fichas', 'warning'); return; }
 
-  // ⏱️ Tocaste legalmente: El Contador Anti-AFK vuelve a cero
-  _missedTurns = 0; 
+  _missedTurns = 0; // Reinicia faltas AFK
   _addMass(row, col, myColor);
 }
 
@@ -351,15 +295,11 @@ async function _passTurn() {
   if (!_active) return;
   _currentTurn = _currentTurn === 'pink' ? 'blue' : 'pink';
   _turnCount++;
-  _dbLastMoveTime = Date.now(); // Sellamos la hora del último movimiento
+  _dbLastMoveTime = Date.now(); 
 
   if (window.CW_SESSION.matchId) {
-     const sb = getSupabase();
-     // Le enviamos la hora exacta a Supabase para que el otro celular la lea
-     sb.from('matches').update({ 
-         board_state: window.CW_SESSION.board, 
-         current_turn: _currentTurn,
-         last_move_time: new Date(_dbLastMoveTime).toISOString()
+     getSupabase().from('matches').update({ 
+         board_state: window.CW_SESSION.board, current_turn: _currentTurn, last_move_time: new Date(_dbLastMoveTime).toISOString()
      }).eq('id', window.CW_SESSION.matchId).catch(()=>{});
   }
   updateDOM();
@@ -368,7 +308,7 @@ async function _passTurn() {
 async function _addMass(row, col, color) {
   _isAnimating = true; await _processMass(row, col, color);
   if (!_active) return;
-  if (!_checkGameOver()) _passTurn();
+  if (!_checkGameOver()) await _passTurn();
   _isAnimating = false;
 }
 
@@ -383,23 +323,15 @@ async function _explode(row, col, color) {
   if (!_active) return;
   window.CW_SESSION.board[row][col].mass = 0; window.CW_SESSION.board[row][col].owner = null; 
   updateDOM();
-
   const neighbors = [];
-  if (row > 0) neighbors.push({row: row - 1, col});
-  if (row < BOARD_SIZE - 1) neighbors.push({row: row + 1, col});
-  if (col > 0) neighbors.push({row, col: col - 1});
-  if (col < BOARD_SIZE - 1) neighbors.push({row, col: col + 1});
-
+  if (row > 0) neighbors.push({row: row - 1, col}); if (row < 4) neighbors.push({row: row + 1, col});
+  if (col > 0) neighbors.push({row, col: col - 1}); if (col < 4) neighbors.push({row, col: col + 1});
   await new Promise(r => setTimeout(r, 200));
-
-  for (const n of neighbors) {
-    if (!_active) break;
-    await _processMass(n.row, n.col, color);
-  }
+  for (const n of neighbors) { if (!_active) break; await _processMass(n.row, n.col, color); }
 }
 
 // ═════════════════════════════════════════════════════════
-// 🧠 MOTOR MINIMAX (Cerebro del Bot Cuántico)
+// 🧠 MOTOR MINIMAX
 // ═════════════════════════════════════════════════════════
 function _cloneBoard(board) { return board.map(row => row.map(cell => ({ owner: cell.owner, mass: cell.mass }))); }
 function _getValidMoves(board, color) {
@@ -486,7 +418,7 @@ function _checkGameOver() {
   return false;
 }
 
-// ⚡ SALIDA BLINDADA
+// ⚡ UI PROFESIONAL: OVERLAY SIN PARPADEO
 async function _finishGame(winnerColor, fromDB = false, customReason = null) {
   if (!_active) return; 
   _active = false;
@@ -496,14 +428,23 @@ async function _finishGame(winnerColor, fromDB = false, customReason = null) {
   
   const myColor = window.CW_SESSION.myColor;
   const win = winnerColor === myColor;
-  const displayReason = customReason ? customReason : (win ? '+50 CP acreditados' : 'Perdiste la batalla');
+  const displayReason = customReason ? customReason : (win ? '+50 CP acreditados' : 'Sigue intentando, guerrero');
 
-  _$container.innerHTML += `
-    <div class="result-screen" style="display:flex; flex-direction:column; justify-content:center; align-items:center; height:100vh; width: 100%; background:var(--bg-dark); position: absolute; top: 0; left: 0; z-index: 9999;">
-      <h1 class="result-title" style="color:var(--text-dim); font-size: 1.4rem;">PROCESANDO...</h1>
-    </div>
-  `;
+  // 1. Creamos la capa transparente SIN destruir el tablero debajo
+  const overlay = document.createElement('div');
+  overlay.id = 'cw-end-overlay';
+  overlay.style.cssText = 'position:absolute; top:0; left:0; width:100%; height:100%; background:rgba(10,10,15,0.9); z-index:9999; display:flex; flex-direction:column; justify-content:center; align-items:center; opacity:0; transition:opacity 0.4s ease; backdrop-filter:blur(6px);';
   
+  overlay.innerHTML = `
+    <h1 style="color:var(--text-dim); font-size: 1.5rem; letter-spacing:2px; font-family:var(--font-display);">PROCESANDO...</h1>
+    <p style="color:var(--text-dim); font-family:var(--font-mono); font-size:0.8rem; margin-top:10px;">Sincronizando servidor</p>
+  `;
+  _$container.appendChild(overlay);
+  
+  // Efecto fade-in suave
+  setTimeout(() => { overlay.style.opacity = '1'; }, 50);
+  
+  // 2. Guardamos en Base de Datos por detrás
   try {
     const sb = getSupabase();
     if (!fromDB && window.CW_SESSION.matchId) {
@@ -511,17 +452,18 @@ async function _finishGame(winnerColor, fromDB = false, customReason = null) {
     }
   } catch (e) { console.error(e); }
 
-  _$container.innerHTML = `
-    <div class="result-screen" style="display:flex; flex-direction:column; justify-content:center; align-items:center; height:100vh; width: 100%; background:var(--bg-dark); position: absolute; top: 0; left: 0; z-index: 9999;">
-      <h1 class="result-title ${win ? 'result-win' : 'result-lose'}">${win ? '¡VICTORIA!' : 'DERROTA'}</h1>
-      <p style="color:var(--text-dim);font-family:var(--font-mono);margin-bottom:2rem; text-align:center; max-width: 80%;">${displayReason}</p>
-      <button class="btn btn-primary" id="btn-exit" style="width:200px;">VOLVER AL INICIO</button>
-    </div>
-  `;
-  
-  _$container.querySelector('#btn-exit').addEventListener('click', async () => {
-    const $btn = _$container.querySelector('#btn-exit'); 
-    $btn.textContent = "SALIENDO..."; $btn.style.opacity = "0.7"; $btn.style.pointerEvents = "none";
-    window.CW_SESSION = null; await reloadProfile(); setView('dashboard');
-  });
+  // 3. Transformación Elegante a Victoria/Derrota
+  setTimeout(() => {
+      overlay.innerHTML = `
+        <h1 class="${win ? 'result-win' : 'result-lose'}" style="font-size:3.5rem; margin-bottom:0; text-shadow:0 0 20px ${win ? 'var(--pink)' : 'var(--blue)'};">${win ? '¡VICTORIA!' : 'DERROTA'}</h1>
+        <p style="color:white; font-family:var(--font-mono); font-size:1rem; margin-top:10px; margin-bottom:30px; text-transform:uppercase; letter-spacing:1px; text-align:center; padding:0 20px;">${displayReason}</p>
+        <button class="btn btn-primary" id="btn-exit" style="width:220px; font-size:1.1rem; padding:15px; box-shadow:0 0 15px ${win ? 'var(--pink)' : 'rgba(0,0,0,0)'};">VOLVER AL INICIO</button>
+      `;
+      
+      overlay.querySelector('#btn-exit').addEventListener('click', async () => {
+        const $btn = overlay.querySelector('#btn-exit'); 
+        $btn.textContent = "SALIENDO..."; $btn.style.opacity = "0.5"; $btn.style.pointerEvents = "none";
+        window.CW_SESSION = null; await reloadProfile(); setView('dashboard');
+      });
+  }, 600); // Pequeña pausa de 0.6 seg para que se vea creíble y fluido
 }
