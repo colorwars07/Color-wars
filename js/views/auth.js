@@ -1,7 +1,7 @@
 /**
  * ═══════════════════════════════════════════════════════
  * COLOR WARS — js/views/auth.js
- * Auth: Login · Register · Reset Password (REDRECCIÓN 10/10)
+ * Auth: Login · Register · Reset Password (REDRECCIÓN CORREGIDA)
  * ═══════════════════════════════════════════════════════
  */
 
@@ -176,14 +176,14 @@ async function handleRegister($c) {
   setBtnLoading($btn, true, 'CREANDO…');
   const sb = getSupabase();
 
-  // 🚀 INYECCIÓN DE REDIRECCIÓN AQUÍ:
+  // 🚀 INYECCIÓN DE REDIRECCIÓN AQUÍ (URL CORREGIDA CON EL GUION):
   const { data: authData, error: authErr } = await sb.auth.signUp({
     email,
     password: pass,
     options: { 
       data: { username: user },
       // Esto asegura que al confirmar el correo, el chamo caiga en el Login
-      emailRedirectTo: 'https://colorwars-mu.vercel.app/#auth' 
+      emailRedirectTo: 'https://color-wars-mu.vercel.app/#auth' 
     },
   });
 
@@ -234,8 +234,8 @@ async function handleForgot($c) {
   const sb = getSupabase();
 
   const { error } = await sb.auth.resetPasswordForEmail(email, {
-    // Redirección para recuperación de contraseña
-    redirectTo: 'https://colorwars-mu.vercel.app/#auth',
+    // Redirección para recuperación de contraseña (URL CORREGIDA CON EL GUION)
+    redirectTo: 'https://color-wars-mu.vercel.app/#auth',
   });
 
   setBtnLoading($btn, false, '¿Olvidaste tu contraseña?');
