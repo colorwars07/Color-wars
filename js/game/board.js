@@ -7,14 +7,15 @@ let _active = false;
 let _currentTurn = 'pink';
 let _isAnimating = false;
 let _turnCount = 0;
-let _missedTurns = 0; 
-let _$container = null; 
-let _masterClockTimer = null; 
-let _pollTimer = null; // 🚀 AQUÍ ESTÁ EL MOTOR 4x4
+let _missedTurns = 0;
+let _$container = null;
+let _masterClockTimer = null;
+let _pollTimer = null;
 let _isPaused = false;
 let _dbStartTime = null;
 let _dbLastMoveTime = null;
 let _dbTotalPausedSecs = 0;
+let _botIsMoving = false; // 🚀 SEGURO ANTI-TRAMPAS DEL BOT
 
 registerView('game', initGameView);
 
@@ -22,7 +23,7 @@ export async function initGameView($container) {
   _$container = $container;
   if (!window.CW_SESSION || !window.CW_SESSION.board) { setView('dashboard'); return; }
 
-  _active = true; _isAnimating = false; _turnCount = 0; _missedTurns = 0;
+  _active = true; _isAnimating = false; _turnCount = 0; _missedTurns = 0; _botIsMoving = false;
   const sb = getSupabase();
 
   if (window.CW_SESSION.matchId) {
@@ -32,25 +33,22 @@ export async function initGameView($container) {
         window.CW_SESSION.board = matchData.board_state || window.CW_SESSION.board;
         _currentTurn = matchData.current_turn || 'pink';
         _dbStartTime = matchData.match_start_time ? new Date(matchData.match_start_time).getTime() : Date.now();
-        
-        _dbLastMoveTime = Date.now(); 
+        _dbLastMoveTime = Date.now();
         _dbTotalPausedSecs = matchData.total_paused_seconds || 0;
-
         await sb.from('matches').update({ last_move_time: new Date(_dbLastMoveTime).toISOString() }).eq('id', window.CW_SESSION.matchId);
       }
     } catch(e) { console.error(e); }
 
-    // 🔥 PRENDEMOS EL MOTOR INMUNE A DESCONEXIONES
     if (!window.CW_SESSION.isBotMatch) {
-      _startPolling(); 
+      _startPolling();
     }
   }
 
-  renderHTML(); updateDOM(); 
-  _startMasterClock(); 
+  renderHTML(); updateDOM();
+  _startMasterClock();
 }
 
-// 🚀 FUNCIÓN DEL MOTOR 4x4 (POLLING)
+// 🔥 MOTOR 4x4 (INMUNE A DESCONEXIONES DE INTERNET)
 function _startPolling() {
   clearInterval(_pollTimer);
   _pollTimer = setInterval(async () => {
@@ -61,24 +59,22 @@ function _startPolling() {
         .select('board_state, current_turn, last_move_time, status, winner')
         .eq('id', window.CW_SESSION.matchId)
         .single();
-        
+
       if (data) {
-        // Si el otro abandonó, cerramos el juego
         if (data.status === 'finished' && data.winner) {
            _finishGame(data.winner, true);
            return;
         }
-        // Si es nuestro turno y el tablero no está actualizado, lo refrescamos
         if (data.current_turn === window.CW_SESSION.myColor && _currentTurn !== window.CW_SESSION.myColor) {
-           window.CW_SESSION.board = data.board_state; 
+           window.CW_SESSION.board = data.board_state;
            _currentTurn = data.current_turn;
            _dbLastMoveTime = new Date(data.last_move_time).getTime();
-           _missedTurns = 0; 
-           updateDOM(); 
+           _missedTurns = 0;
+           updateDOM();
         }
       }
     } catch(e) { console.warn("Fallo de red menor, reintentando..."); }
-  }, 1500); // Pregunta cada 1.5 segundos
+  }, 1500);
 }
 
 function renderHTML() {
@@ -106,7 +102,11 @@ function renderHTML() {
   _$container.querySelector('#grid').addEventListener('click', (e) => {
     const cell = e.target.closest('.cell'); if (cell) handlePlayerClick(parseInt(cell.dataset.r), parseInt(cell.dataset.c));
   });
-  _$container.querySelector('#btn-surrender').addEventListener('click', () => _finishGame(window.CW_SESSION.myColor === 'pink' ? 'blue' : 'pink', false, "Abandonaste la partida"));
+  
+  // 🚀 REPARACIÓN DEL BOTÓN DE ABANDONAR
+  _$container.querySelector('#btn-surrender').addEventListener('click', () => {
+     _finishGame(window.CW_SESSION.myColor === 'pink' ? 'blue' : 'pink', false, "Abandonaste la partida");
+  });
 }
 
 function updateDOM() {
@@ -153,16 +153,24 @@ function _startMasterClock() {
 
         if (turnLeft <= 0 && !_isAnimating) {
             if (isMyTurn) {
-                _missedTurns++; _dbLastMoveTime = now; 
+                _missedTurns++; _dbLastMoveTime = now;
                 if (_missedTurns >= 4) _finishGame(window.CW_SESSION.myColor==='pink'?'blue':'pink', false, "ELIMINADO POR AFK");
                 else {
                     showToast(`¡TURNO SALTADO! (${_missedTurns}/4)`, 'warning');
                     _passTurn();
                 }
-            } else if (window.CW_SESSION.isBotMatch) { _botMove(); }
+            } else if (window.CW_SESSION.isBotMatch && !_botIsMoving) {
+                _botIsMoving = true;
+                _botMove();
+            }
         }
-        if (window.CW_SESSION.isBotMatch && !isMyTurn && turnLeft === 8 && !_isAnimating) _botMove();
-    }, 1000); 
+        
+        // 🚀 CANDADO ANTI-TRAMPA: El bot solo puede jugar si no está moviendo ya
+        if (window.CW_SESSION.isBotMatch && !isMyTurn && turnLeft <= 8 && !_isAnimating && !_botIsMoving) {
+            _botIsMoving = true;
+            setTimeout(() => { _botMove(); }, 600);
+        }
+    }, 1000);
 }
 
 function handlePlayerClick(row, col) {
@@ -174,12 +182,13 @@ function handlePlayerClick(row, col) {
 
 async function _addMass(row, col, color) {
   if (_isAnimating) return;
-  _isAnimating = true; 
+  _isAnimating = true;
   try {
       await _processMass(row, col, color);
       if (_active && !_checkGameOver()) await _passTurn();
   } finally {
       _isAnimating = false;
+      _botIsMoving = false; // 🚀 El bot termina su turno y se bloquea
   }
 }
 
@@ -190,7 +199,7 @@ async function _processMass(row, col, color) {
 }
 
 async function _explode(row, col, color) {
-  window.CW_SESSION.board[row][col].mass = 0; window.CW_SESSION.board[row][col].owner = null; 
+  window.CW_SESSION.board[row][col].mass = 0; window.CW_SESSION.board[row][col].owner = null;
   updateDOM();
   const n = [];
   if (row > 0) n.push({row: row - 1, col}); if (row < 4) n.push({row: row + 1, col});
@@ -218,11 +227,13 @@ function _botMove() {
   if (moves.length > 0) {
       const m = moves[Math.floor(Math.random()*moves.length)];
       _addMass(m.r, m.c, botColor);
+  } else {
+      _botIsMoving = false;
   }
 }
 
 function _checkGameOver() {
-  let p = 0, b = 0; 
+  let p = 0, b = 0;
   window.CW_SESSION.board.forEach(row => row.forEach(c => { if(c.owner==='pink') p++; else if(c.owner==='blue') b++; }));
   if (_turnCount >= 2) {
      if (p === 0) { _finishGame('blue'); return true; }
@@ -234,17 +245,24 @@ function _checkGameOver() {
 async function _finishGame(winnerColor, fromDB = false, reason = null) {
   if (!_active) return; _active = false;
   clearInterval(_masterClockTimer);
-  clearInterval(_pollTimer); // APAGAMOS EL MOTOR AL TERMINAR
+  clearInterval(_pollTimer);
   const win = winnerColor === window.CW_SESSION.myColor;
   const overlay = document.createElement('div');
   overlay.className = 'result-overlay';
   overlay.innerHTML = `
     <h1 style="color:white; font-size:3rem;">${win ? 'VICTORIA' : 'DERROTA'}</h1>
     <p style="color:#aaa;">${reason || (win ? '+50 CP' : 'Sigue practicando')}</p>
-    <button class="btn btn-primary" onclick="location.reload()">VOLVER</button>
+    <button class="btn btn-primary" id="btn-return-dash">VOLVER AL INICIO</button>
   `;
   _$container.appendChild(overlay);
+
+  // 🚀 REPARACIÓN: AL CERRAR, TE DEVUELVE LIMPIO AL MENÚ
+  _$container.querySelector('#btn-return-dash').addEventListener('click', () => {
+     window.CW_SESSION = null; // Borramos la sesión de partida
+     window.__CW_setView('dashboard'); // Te mandamos al menú
+  });
+
   if (!fromDB && window.CW_SESSION.matchId) {
-     await getSupabase().from('matches').update({ status:'finished', winner:winnerColor }).eq('id', window.CW_SESSION.matchId);
+     await getSupabase().from('matches').update({ status:'finished', winner:winnerColor }).eq('id', window.CW_SESSION.matchId).catch(()=>{});
   }
 }
