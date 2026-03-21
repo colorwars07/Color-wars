@@ -3,6 +3,8 @@ import { setView } from '../core/state.js';
 import { getSupabase } from '../core/supabase.js';
 
 const BOARD_SIZE = 5; let _active = false; let _currentTurn = 'pink'; let _isAnimating = false; let _turnCount = 0; let _missedTurns = 0; let _$container = null; let _masterClockTimer = null; let _pollTimer = null; let _dbStartTime = null; let _dbLastMoveTime = null; let _lastDBUpdateTime = null; let _botIsMoving = false;
+// 🔒 CIRUGÍA: Variables del candado y strikes del rival
+let _lockPollingUntil = 0; let _opponentMissedTurns = 0;
 
 registerView('game', initGameView);
 
@@ -10,6 +12,7 @@ export async function initGameView($container) {
   _$container = $container;
   if (!window.CW_SESSION || !window.CW_SESSION.board) { window.CW_SESSION = null; setView('dashboard'); return; }
   _active = true; _isAnimating = false; _turnCount = 0; _missedTurns = 0; _botIsMoving = false; _lastDBUpdateTime = Date.now();
+  _lockPollingUntil = 0; _opponentMissedTurns = 0; // Reiniciamos candados y strikes
   const sb = getSupabase();
 
   if (window.CW_SESSION.matchId) {
@@ -34,8 +37,12 @@ function _startPolling() {
       if (data) {
         _lastDBUpdateTime = Date.now(); 
         if (data.status === 'finished' && data.winner) { _finishGame(data.winner, true); return; }
-        if (data.current_turn === window.CW_SESSION.myColor && _currentTurn !== window.CW_SESSION.myColor) {
-           window.CW_SESSION.board = data.board_state; _currentTurn = data.current_turn; _dbLastMoveTime = new Date(data.last_move_time).getTime(); _missedTurns = 0; updateDOM();
+        
+        // 🔒 CIRUGÍA: Candado anti-viajes en el tiempo (Prohibido leer si acabo de mover)
+        if (Date.now() > _lockPollingUntil) {
+            if (data.current_turn === window.CW_SESSION.myColor && _currentTurn !== window.CW_SESSION.myColor) {
+               window.CW_SESSION.board = data.board_state; _currentTurn = data.current_turn; _dbLastMoveTime = new Date(data.last_move_time).getTime(); _missedTurns = 0; _opponentMissedTurns = 0; updateDOM();
+            }
         }
       }
     } catch(e) {}
@@ -95,9 +102,7 @@ function _startMasterClock() {
         if (!_active) return clearInterval(_masterClockTimer);
         const now = Date.now();
 
-        if (!window.CW_SESSION.isBotMatch) {
-            if (Math.floor((now - _lastDBUpdateTime) / 1000) >= 40) { _finishGame(window.CW_SESSION.myColor === 'pink' ? 'blue' : 'pink', false, "EL RIVAL PERDIÓ LA CONEXIÓN"); return; }
-        }
+        // 🗑️ CIRUGÍA: Extirpada la regla vieja de los 40s (ahora se usan strikes AFK)
 
         let globalLeft = 180 - Math.floor((now - _dbStartTime) / 1000);
         if (globalLeft < 0) globalLeft = 0; 
@@ -108,16 +113,30 @@ function _startMasterClock() {
 
         let turnLeft = 10 - Math.floor((now - _dbLastMoveTime) / 1000);
         const turnEl = _$container.querySelector('#turn-indicator'); const isMyTurn = _currentTurn === window.CW_SESSION.myColor;
-        if (turnEl) turnEl.innerHTML = isMyTurn ? `<span style="color:var(--pink);">TU TURNO: ${Math.max(0, turnLeft)}s</span>` : `<span style="color:#aaa;">ESPERANDO RIVAL: ${Math.max(0, turnLeft)}s</span>`;
-
-        if (turnLeft <= 0 && !_isAnimating) {
-            if (isMyTurn) {
+        
+        if (isMyTurn) {
+            if (turnEl) turnEl.innerHTML = `<span style="color:var(--pink);">TU TURNO: ${Math.max(0, turnLeft)}s</span>`;
+            if (turnLeft <= 0 && !_isAnimating) {
                 _missedTurns++; _dbLastMoveTime = now;
-                if (_missedTurns >= 4) _finishGame(window.CW_SESSION.myColor==='pink'?'blue':'pink', false, "ELIMINADO POR INACTIVIDAD");
-                else { showToast(`¡TURNO SALTADO! (${_missedTurns}/4)`, 'warning'); _passTurn(); }
-            } else if (window.CW_SESSION.isBotMatch && !_botIsMoving) { _botIsMoving = true; _botMove(); }
+                if (_missedTurns >= 3) _finishGame(window.CW_SESSION.myColor==='pink'?'blue':'pink', false, "ELIMINADO POR INACTIVIDAD (3/3)");
+                else { showToast(`¡TURNO SALTADO! Advertencia ${_missedTurns}/3`, 'warning'); _passTurn(); }
+            }
+        } else {
+            if (turnEl) turnEl.innerHTML = `<span style="color:#aaa;">ESPERANDO RIVAL: ${Math.max(0, turnLeft)}s</span>`;
+            
+            // 🛡️ CIRUGÍA: ÁRBITRO AFK (El que tiene internet castiga al desconectado)
+            if (!window.CW_SESSION.isBotMatch && turnLeft <= -2 && !_isAnimating) {
+                _opponentMissedTurns++; _dbLastMoveTime = now;
+                if (_opponentMissedTurns >= 3) {
+                    _finishGame(window.CW_SESSION.myColor, false, "RIVAL ELIMINADO POR INACTIVIDAD (3/3)");
+                } else {
+                    showToast(`El rival perdió su turno. Strike ${_opponentMissedTurns}/3`, 'info');
+                    _passTurn();
+                }
+            } else if (window.CW_SESSION.isBotMatch && turnLeft <= 8 && !_isAnimating && !_botIsMoving) { 
+                _botIsMoving = true; setTimeout(() => { _botMove(); }, 800); 
+            }
         }
-        if (window.CW_SESSION.isBotMatch && !isMyTurn && turnLeft <= 8 && !_isAnimating && !_botIsMoving) { _botIsMoving = true; setTimeout(() => { _botMove(); }, 800); }
     }, 1000);
 }
 
@@ -127,7 +146,7 @@ function handlePlayerClick(row, col) {
   let myPieces = 0; window.CW_SESSION.board.forEach(r => r.forEach(c => { if (c.owner === myColor) myPieces++; }));
   if (myPieces > 0 && cell.owner !== myColor) { showToast("Solo puedes presionar tus fichas", "warning"); return; }
   if (cell.owner && cell.owner !== myColor) return;
-  _missedTurns = 0; _addMass(row, col, myColor);
+  _missedTurns = 0; _addMass(row, col, myColor); // Resetea tus strikes si tocas una ficha
 }
 
 async function _addMass(row, col, color) {
@@ -151,10 +170,12 @@ async function _explode(row, col, color) {
 
 function _passTurn() {
   _currentTurn = _currentTurn === 'pink' ? 'blue' : 'pink'; _dbLastMoveTime = Date.now(); _turnCount++; updateDOM();
+  
+  // 🔒 CIRUGÍA: CERRAMOS EL CANDADO (No escuchar a Supabase por 2.5s al pasar turno)
+  _lockPollingUntil = Date.now() + 2500;
+  
   if (window.CW_SESSION.matchId) { getSupabase().from('matches').update({ board_state: window.CW_SESSION.board, current_turn: _currentTurn, last_move_time: new Date(_dbLastMoveTime).toISOString() }).eq('id', window.CW_SESSION.matchId).then(); }
 }
-
-// 🧠 INICIO DE LA CIRUGÍA MINIMAX 🧠
 
 function _botMove() {
   const botColor = window.CW_SESSION.myColor === 'pink' ? 'blue' : 'pink';
@@ -184,7 +205,7 @@ function _botMove() {
       let simBoard = JSON.parse(JSON.stringify(board));
       _simulateAddMass(simBoard, move.r, move.c, botColor);
       let score = _evaluateSimulatedBoard(simBoard, botColor, playerColor);
-      score += Math.random() * 0.5; // Ruido aleatorio
+      score += Math.random() * 0.5; 
       
       if (score > maxScore) {
           maxScore = score;
@@ -223,17 +244,15 @@ function _evaluateSimulatedBoard(board, botColor, playerColor) {
             const cell = board[r][c];
             if (cell.owner === botColor) {
                 score += 10 + (cell.mass * 5);
-                if (cell.mass === 3) score += 30; // Premia si arma bombas nivel 3
+                if (cell.mass === 3) score += 30; 
             } else if (cell.owner === playerColor) {
                 score -= 10 + (cell.mass * 5);
-                if (cell.mass === 3) score -= 50; // Castiga si te deja bombas nivel 3
+                if (cell.mass === 3) score -= 50; 
             }
         }
     }
     return score;
 }
-
-// 🧠 FIN DE LA CIRUGÍA MINIMAX 🧠
 
 function _checkGameOver() {
   let p = 0, b = 0;
@@ -267,7 +286,6 @@ function _finishGame(winnerColor, fromDB = false, reason = null) {
      const btn = document.getElementById('btn-return-dash-final');
      btn.textContent = "SALIENDO..."; btn.disabled = true;
      
-     // 🛡️ ESCUDO ANTI-RECONEXIÓN ACTIVADO
      window.sessionStorage.setItem('cw_skip_recon', '1');
      
      if (window.CW_SESSION && window.CW_SESSION.matchId) { getSupabase().from('matches').update({ status:'finished' }).eq('id', window.CW_SESSION.matchId).then(); }
