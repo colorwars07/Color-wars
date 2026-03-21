@@ -50,21 +50,23 @@ function renderSearchScreen($c) {
     </div>
   </div>`;
   
-  $c.querySelector('#btn-cancel-search').addEventListener('click', async () => {
+  // 🚀 BOTÓN CANCELAR: DISPARA Y OLVIDA (Sin bloqueos)
+  $c.querySelector('#btn-cancel-search').addEventListener('click', () => {
       const $btn = document.getElementById('btn-cancel-search');
-      if($btn) { $btn.textContent = "CANCELANDO..."; $btn.style.opacity = '0.5'; $btn.style.pointerEvents = 'none'; }
+      if($btn) { $btn.textContent = "CANCELANDO..."; $btn.disabled = true; }
       
       clearTimeout(_searchTimer); 
       clearInterval(_countdownTimer);
       clearInterval(_pollTimer); 
       
       if (_currentMatchId) { 
-          await getSupabase().from('matches').update({ status: 'cancelled' }).eq('id', _currentMatchId).catch(()=>{}); 
+          // Se envía a DB pero NO usamos 'await' para no trancar la pantalla
+          getSupabase().from('matches').update({ status: 'cancelled' }).eq('id', _currentMatchId).catch(()=>{}); 
       }
       
       _currentMatchId = null; 
       window.CW_SESSION = null;
-      setView('dashboard'); // Salida perfecta al menú
+      setView('dashboard'); // Salida rápida e instantánea
   });
 }
 
