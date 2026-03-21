@@ -9,12 +9,15 @@ const ENTRY_FEE = 30; const SEARCH_TIMEOUT_MS = 20000;
 const VZLA_NAMES = ["Maikol", "El Bryan", "La Catira", "Yuridia", "El Gocho", "La Chama", "Yuleisi", "El Chino", "Juancho", "Dayana", "El Portugués", "El Convive", "Yordano", "Cristian"];
 
 export async function initMatchmaking($container) {
+  // 🚛 CIRUGÍA: CAMIÓN DE BASURA (Limpieza absoluta de memoria al entrar)
   clearTimeout(_searchTimer); clearInterval(_countdownTimer); clearInterval(_pollTimer); 
+  _searchTimer = null; _countdownTimer = null; _pollTimer = null; _currentMatchId = null;
   window.CW_SESSION = null; 
+  
   const profile = getProfile();
   if (!profile) { setView('auth'); return; }
   if (profile.wallet_bs < ENTRY_FEE) { showToast(`Saldo insuficiente. Necesitas ${ENTRY_FEE} CP.`, 'error'); setView('dashboard'); return; }
-  _currentMatchId = null;
+  
   renderSearchScreen($container);
   try { await getSupabase().rpc('limpiar_fantasmas', { jugador_id: profile.id }); } catch (e) {}
   startSearch($container, profile);
@@ -37,7 +40,9 @@ function renderSearchScreen($c) {
       const $btn = document.getElementById('btn-cancel-search');
       if($btn) { $btn.textContent = "CANCELANDO..."; $btn.disabled = true; }
       
+      // 🚛 CIRUGÍA: CAMIÓN DE BASURA (Limpieza absoluta al salir)
       clearTimeout(_searchTimer); clearInterval(_countdownTimer); clearInterval(_pollTimer); 
+      _searchTimer = null; _countdownTimer = null; _pollTimer = null;
       
       // 🛡️ ESCUDO ANTI-RECONEXIÓN ACTIVADO
       window.sessionStorage.setItem('cw_skip_recon', '1');
