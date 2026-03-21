@@ -1,3 +1,9 @@
+/**
+ * ═══════════════════════════════════════════════════════
+ * COLOR WARS — js/game/board.js
+ * V10.0 SENIOR PRO (3 MIN + OPCIÓN A + ANTI-BUCLE ABSOLUTO)
+ * ═══════════════════════════════════════════════════════
+ */
 import { registerView, showToast, escHtml } from '../core/app.js';
 import { setView } from '../core/state.js';
 import { getSupabase } from '../core/supabase.js';
@@ -28,11 +34,13 @@ export async function initGameView($container) {
   _lastDBUpdateTime = Date.now();
   const sb = getSupabase();
 
+  // Esconder cualquier cartel residual de "Reconectando" que app.js haya dejado atravesado
+  document.querySelectorAll('[class*="reconectando"]').forEach(el => el.style.display = 'none');
+
   if (window.CW_SESSION.matchId) {
     try {
       const { data: matchData } = await sb.from('matches').select('*').eq('id', window.CW_SESSION.matchId).single();
       if (matchData) {
-        // ANTI-FANTASMAS: Si entras y la partida ya acabó, aborta la misión de inmediato.
         if (matchData.status === 'finished' || matchData.status === 'cancelled') {
            window.CW_SESSION = null; setView('dashboard'); return;
         }
@@ -93,11 +101,10 @@ function renderHTML() {
     const cell = e.target.closest('.cell'); if (cell) handlePlayerClick(parseInt(cell.dataset.r), parseInt(cell.dataset.c));
   });
   
-  // ABANDONAR -> TE MANDA A LA PANTALLA DE DERROTA
   _$container.querySelector('#btn-surrender').addEventListener('click', async () => {
-     if (!confirm("¿Seguro que quieres abandonar?")) return;
+     if (!confirm("¿Seguro que quieres abandonar? La victoria será de tu rival.")) return;
      const winnerColor = window.CW_SESSION.myColor === 'pink' ? 'blue' : 'pink';
-     await _finishGame(winnerColor, false, "Abandonaste la partida");
+     await _finishGame(winnerColor, false, "ABANDONASTE LA ARENA");
   });
 }
 
@@ -123,13 +130,19 @@ function updateDOM() {
   else { if(sy) sy.textContent = bS; if(sr) sr.textContent = pS; }
 }
 
+// 🧮 LA REGLA DE MUERTE SÚBITA (OPCIÓN A)
 function _resolveTimeOutWinner() {
     let pCells = 0, bCells = 0, pMass = 0, bMass = 0;
     window.CW_SESSION.board.forEach(row => row.forEach(c => { 
       if(c.owner === 'pink') { pCells++; pMass += c.mass; } else if(c.owner === 'blue') { bCells++; bMass += c.mass; }
     }));
-    if (pCells > bCells) return 'pink'; if (bCells > pCells) return 'blue';
-    if (pMass > bMass) return 'pink'; if (bMass > pMass) return 'blue';
+    
+    if (pCells > bCells) return 'pink'; 
+    if (bCells > pCells) return 'blue';
+    if (pMass > bMass) return 'pink'; 
+    if (bMass > pMass) return 'blue';
+    
+    // Si es un empate matemático perfecto, pierde el que tenía el turno (por dejar agotar el reloj)
     return _currentTurn === 'pink' ? 'blue' : 'pink'; 
 }
 
@@ -139,22 +152,31 @@ function _startMasterClock() {
         if (!_active) return clearInterval(_masterClockTimer);
         const now = Date.now();
 
+        // 1. TIMER DE 40s (CAÍDA DE INTERNET)
         if (!window.CW_SESSION.isBotMatch) {
             const timeWithoutInternet = Math.floor((now - _lastDBUpdateTime) / 1000);
             if (timeWithoutInternet >= 40) {
                 const rivalColor = window.CW_SESSION.myColor === 'pink' ? 'blue' : 'pink';
-                _finishGame(rivalColor, false, "EL RIVAL PERDIÓ LA CONEXIÓN"); return;
+                _finishGame(rivalColor, false, "EL RIVAL PERDIÓ LA CONEXIÓN (40s)"); return;
             }
         }
 
+        // 2. RELOJ GLOBAL DE 3 MINUTOS (EL QUE PEDISTE)
         let globalLeft = 180 - Math.floor((now - _dbStartTime) / 1000);
         const gt = _$container.querySelector('#global-timer');
-        if (gt) gt.textContent = `${Math.floor(Math.max(0,globalLeft) / 60).toString().padStart(2, '0')}:${(Math.max(0,globalLeft) % 60).toString().padStart(2, '0')}`;
+        
+        // Si entra a una partida zombie vieja, globalLeft será negativo. Lo forzamos a 0.
+        if (globalLeft < 0) globalLeft = 0; 
+        
+        if (gt) gt.textContent = `${Math.floor(globalLeft / 60).toString().padStart(2, '0')}:${(globalLeft % 60).toString().padStart(2, '0')}`;
         
         if (globalLeft <= 0) { 
-            const winner = _resolveTimeOutWinner(); _finishGame(winner, false, "TIEMPO AGOTADO (VICTORIA POR PUNTOS)"); return; 
+            const winner = _resolveTimeOutWinner(); // Ejecuta la Opción A
+            _finishGame(winner, false, "TIEMPO AGOTADO (VICTORIA POR PUNTOS)"); 
+            return; 
         }
 
+        // 3. TIMER DE TURNO (10 SEGUNDOS)
         let turnLeft = 10 - Math.floor((now - _dbLastMoveTime) / 1000);
         const turnEl = _$container.querySelector('#turn-indicator');
         const isMyTurn = _currentTurn === window.CW_SESSION.myColor;
@@ -164,13 +186,13 @@ function _startMasterClock() {
         if (turnLeft <= 0 && !_isAnimating) {
             if (isMyTurn) {
                 _missedTurns++; _dbLastMoveTime = now;
-                if (_missedTurns >= 4) _finishGame(window.CW_SESSION.myColor==='pink'?'blue':'pink', false, "ELIMINADO POR AFK");
+                if (_missedTurns >= 4) _finishGame(window.CW_SESSION.myColor==='pink'?'blue':'pink', false, "ELIMINADO POR INACTIVIDAD");
                 else { showToast(`¡TURNO SALTADO! (${_missedTurns}/4)`, 'warning'); _passTurn(); }
             } else if (window.CW_SESSION.isBotMatch && !_botIsMoving) { _botIsMoving = true; _botMove(); }
         }
         
         if (window.CW_SESSION.isBotMatch && !isMyTurn && turnLeft <= 8 && !_isAnimating && !_botIsMoving) {
-            _botIsMoving = true; setTimeout(() => { _botMove(); }, 600);
+            _botIsMoving = true; setTimeout(() => { _botMove(); }, 800);
         }
     }, 1000);
 }
@@ -211,6 +233,7 @@ async function _passTurn() {
   }
 }
 
+// 🧠 BOT MINIMAX (PRIORIZA EXPLOSIONES)
 function _botMove() {
   const botColor = window.CW_SESSION.myColor === 'pink' ? 'blue' : 'pink';
   const board = window.CW_SESSION.board;
@@ -248,6 +271,7 @@ function _checkGameOver() {
   return false;
 }
 
+// 💥 EL ASESINO DE BUCLES (Mata la partida en Supabase ANTES de salir)
 async function _finishGame(winnerColor, fromDB = false, reason = null) {
   if (!_active) return; 
   _active = false;
@@ -269,14 +293,26 @@ async function _finishGame(winnerColor, fromDB = false, reason = null) {
   `;
   document.body.appendChild(overlay);
 
-  // BOTÓN DE LA PANTALLA DERROTA -> LIMPIA SESIÓN -> VA AL MENÚ DE FORMA SEGURA
-  document.getElementById('btn-return-dash-final').addEventListener('click', () => {
+  // ESTE BOTÓN AHORA ES BLINDADO
+  document.getElementById('btn-return-dash-final').addEventListener('click', async () => {
+     const btn = document.getElementById('btn-return-dash-final');
+     btn.textContent = "SALIENDO..."; 
+     btn.disabled = true; // Bloquea el botón para que no le des dos veces
+     
+     // Obligamos a Supabase a matar la partida antes de movernos
+     if (window.CW_SESSION && window.CW_SESSION.matchId) {
+         await getSupabase().from('matches').update({ status:'finished' }).eq('id', window.CW_SESSION.matchId).catch(()=>{});
+     }
+     
      document.body.removeChild(overlay); 
      window.CW_SESSION = null; 
-     setView('dashboard'); 
+     
+     // Recarga forzada de la página (Hard Reload) para limpiar toda la memoria de app.js
+     window.location.href = '/'; 
   });
 
+  // Si el tiempo se acabó y fuimos nosotros los que nos dimos cuenta, avisamos a la DB (Pero sin bloquear la interfaz)
   if (!fromDB && window.CW_SESSION.matchId) {
-     await getSupabase().from('matches').update({ status:'finished', winner:winnerColor }).eq('id', window.CW_SESSION.matchId).catch(()=>{});
+     getSupabase().from('matches').update({ status:'finished', winner:winnerColor }).eq('id', window.CW_SESSION.matchId).catch(()=>{});
   }
 }
