@@ -154,31 +154,86 @@ function _passTurn() {
   if (window.CW_SESSION.matchId) { getSupabase().from('matches').update({ board_state: window.CW_SESSION.board, current_turn: _currentTurn, last_move_time: new Date(_dbLastMoveTime).toISOString() }).eq('id', window.CW_SESSION.matchId).then(); }
 }
 
+// 🧠 INICIO DE LA CIRUGÍA MINIMAX 🧠
+
 function _botMove() {
-  const botColor = window.CW_SESSION.myColor === 'pink' ? 'blue' : 'pink'; const board = window.CW_SESSION.board;
-  let myPieces = 0; board.forEach(r => r.forEach(c => { if(c.owner === botColor) myPieces++; }));
+  const botColor = window.CW_SESSION.myColor === 'pink' ? 'blue' : 'pink';
+  const playerColor = window.CW_SESSION.myColor;
+  const board = window.CW_SESSION.board;
+  
+  let botPieces = 0;
+  board.forEach(r => r.forEach(c => { if(c.owner === botColor) botPieces++; }));
+
   let validMoves = [];
-  for(let r=0; r<5; r++) for(let c=0; c<5; c++) { if (myPieces > 0) { if (board[r][c].owner === botColor) validMoves.push({r,c}); } else { if (!board[r][c].owner) validMoves.push({r,c}); } }
-  if (validMoves.length === 0) { _botIsMoving = false; return; }
-  let bestMove = validMoves[0], maxScore = -9999;
-  for (let move of validMoves) {
-      let score = _evaluateBoardState(board, move.r, move.c, botColor) + (Math.random() * 0.5); 
-      if (score > maxScore) { maxScore = score; bestMove = move; }
+  for(let r=0; r<5; r++) {
+      for(let c=0; c<5; c++) {
+          if (botPieces > 0) {
+              if (board[r][c].owner === botColor) validMoves.push({r,c});
+          } else {
+              if (!board[r][c].owner) validMoves.push({r,c});
+          }
+      }
   }
+
+  if (validMoves.length === 0) { _botIsMoving = false; return; }
+
+  let bestMove = validMoves[0];
+  let maxScore = -Infinity;
+
+  for (let move of validMoves) {
+      let simBoard = JSON.parse(JSON.stringify(board));
+      _simulateAddMass(simBoard, move.r, move.c, botColor);
+      let score = _evaluateSimulatedBoard(simBoard, botColor, playerColor);
+      score += Math.random() * 0.5; // Ruido aleatorio
+      
+      if (score > maxScore) {
+          maxScore = score;
+          bestMove = move;
+      }
+  }
+  
   _addMass(bestMove.r, bestMove.c, botColor);
 }
 
-function _evaluateBoardState(board, r, c, color) {
-  let score = board[r][c].mass === 3 ? 50 : board[r][c].mass; 
-  const neighbors = [ {r: r-1, c}, {r: r+1, c}, {r, c: c-1}, {r, c: c+1} ];
-  for (let n of neighbors) {
-      if (n.r>=0 && n.r<5 && n.c>=0 && n.c<5) {
-          const adj = board[n.r][n.c];
-          if (adj.owner && adj.owner !== color) score += (adj.mass === 3) ? (board[r][c].mass === 3 ? 100 : -20) : adj.mass;
-      }
-  }
-  return score;
+function _simulateAddMass(board, r, c, color) {
+    board[r][c].owner = color;
+    board[r][c].mass++;
+    if (board[r][c].mass >= 4) {
+        _simulateExplode(board, r, c, color);
+    }
 }
+
+function _simulateExplode(board, r, c, color) {
+    board[r][c].mass = 0;
+    board[r][c].owner = null;
+    const n = [];
+    if (r > 0) n.push({r: r - 1, c});
+    if (r < 4) n.push({r: r + 1, c});
+    if (c > 0) n.push({r, c: c - 1});
+    if (c < 4) n.push({r, c: c + 1});
+    for (const pos of n) {
+        _simulateAddMass(board, pos.r, pos.c, color);
+    }
+}
+
+function _evaluateSimulatedBoard(board, botColor, playerColor) {
+    let score = 0;
+    for(let r=0; r<5; r++) {
+        for(let c=0; c<5; c++) {
+            const cell = board[r][c];
+            if (cell.owner === botColor) {
+                score += 10 + (cell.mass * 5);
+                if (cell.mass === 3) score += 30; // Premia si arma bombas nivel 3
+            } else if (cell.owner === playerColor) {
+                score -= 10 + (cell.mass * 5);
+                if (cell.mass === 3) score -= 50; // Castiga si te deja bombas nivel 3
+            }
+        }
+    }
+    return score;
+}
+
+// 🧠 FIN DE LA CIRUGÍA MINIMAX 🧠
 
 function _checkGameOver() {
   let p = 0, b = 0;
