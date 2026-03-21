@@ -4,36 +4,19 @@ import { getSupabase } from '../core/supabase.js';
 
 registerView('matchmaking', initMatchmaking);
 
-let _searchTimer = null;
-let _countdownTimer = null;
-let _pollTimer = null;      
-let _currentMatchId = null; 
-const ENTRY_FEE = 30; 
-const SEARCH_TIMEOUT_MS = 20000; 
-
+let _searchTimer = null; let _countdownTimer = null; let _pollTimer = null; let _currentMatchId = null; 
+const ENTRY_FEE = 30; const SEARCH_TIMEOUT_MS = 20000; 
 const VZLA_NAMES = ["Maikol", "El Bryan", "La Catira", "Yuridia", "El Gocho", "La Chama", "Yuleisi", "El Chino", "Juancho", "Dayana", "El Portugués", "El Convive", "Yordano", "Cristian"];
 
 export async function initMatchmaking($container) {
-  clearTimeout(_searchTimer);
-  clearInterval(_countdownTimer);
-  clearInterval(_pollTimer); 
+  clearTimeout(_searchTimer); clearInterval(_countdownTimer); clearInterval(_pollTimer); 
   window.CW_SESSION = null; 
-
   const profile = getProfile();
   if (!profile) { setView('auth'); return; }
-
-  if (profile.wallet_bs < ENTRY_FEE) {
-    showToast(`Saldo insuficiente. Necesitas ${ENTRY_FEE} CP.`, 'error');
-    setView('dashboard');
-    return;
-  }
-
+  if (profile.wallet_bs < ENTRY_FEE) { showToast(`Saldo insuficiente. Necesitas ${ENTRY_FEE} CP.`, 'error'); setView('dashboard'); return; }
   _currentMatchId = null;
   renderSearchScreen($container);
-  
-  const sb = getSupabase();
-  try { await sb.rpc('limpiar_fantasmas', { jugador_id: profile.id }); } catch (e) {}
-
+  try { await getSupabase().rpc('limpiar_fantasmas', { jugador_id: profile.id }); } catch (e) {}
   startSearch($container, profile);
 }
 
@@ -50,31 +33,25 @@ function renderSearchScreen($c) {
     </div>
   </div>`;
   
-  // 🚀 BOTÓN CANCELAR: DISPARA Y OLVIDA (Sin bloqueos)
   $c.querySelector('#btn-cancel-search').addEventListener('click', () => {
       const $btn = document.getElementById('btn-cancel-search');
       if($btn) { $btn.textContent = "CANCELANDO..."; $btn.disabled = true; }
       
-      clearTimeout(_searchTimer); 
-      clearInterval(_countdownTimer);
-      clearInterval(_pollTimer); 
+      clearTimeout(_searchTimer); clearInterval(_countdownTimer); clearInterval(_pollTimer); 
       
-      if (_currentMatchId) { 
-          // Se envía a DB pero NO usamos 'await' para no trancar la pantalla
-          getSupabase().from('matches').update({ status: 'cancelled' }).eq('id', _currentMatchId).catch(()=>{}); 
-      }
+      // 🛡️ ESCUDO ANTI-RECONEXIÓN ACTIVADO
+      window.sessionStorage.setItem('cw_skip_recon', '1');
       
-      _currentMatchId = null; 
-      window.CW_SESSION = null;
-      setView('dashboard'); // Salida rápida e instantánea
+      if (_currentMatchId) { getSupabase().from('matches').update({ status: 'cancelled' }).eq('id', _currentMatchId).then(); }
+      _currentMatchId = null; window.CW_SESSION = null;
+      setView('dashboard'); 
   });
 }
 
 async function payEntryFee() {
   const profile = getProfile();
-  const sb = getSupabase();
   try {
-    const { data: cobroExitoso } = await sb.rpc('cobrar_entrada', { jugador_id: profile.id, costo: ENTRY_FEE });
+    const { data: cobroExitoso } = await getSupabase().rpc('cobrar_entrada', { jugador_id: profile.id, costo: ENTRY_FEE });
     if (cobroExitoso) setProfile({ ...profile, wallet_bs: Number(profile.wallet_bs) - ENTRY_FEE });
   } catch(e) {}
 }
@@ -83,34 +60,26 @@ async function startSearch($c, profile) {
   const sb = getSupabase();
   try {
     const { data: waitingMatch } = await sb.from('matches').select('*').eq('status', 'waiting').neq('player_pink', profile.id).limit(1).maybeSingle();
-
     if (waitingMatch) {
       const { data: joinedMatch } = await sb.from('matches').update({ player_blue: profile.id, status: 'playing', match_start_time: new Date().toISOString(), last_move_time: new Date().toISOString() }).eq('id', waitingMatch.id).select().single();
       await payEntryFee();
       const { data: oppData } = await sb.from('users').select('username').eq('id', waitingMatch.player_pink).single();
-      const rivalName = oppData?.username || "Jugador";
-
-      window.CW_SESSION = { isBotMatch: false, matchId: joinedMatch.id, myColor: 'blue', rivalName: rivalName, board: Array(5).fill(null).map(() => Array(5).fill(null).map(() => ({ owner: null, mass: 0 }))) };
-      renderCountdownScreen($c, profile.username, rivalName, "Juegas de segundo (AZUL)");
-      startCountdown($c);
+      window.CW_SESSION = { isBotMatch: false, matchId: joinedMatch.id, myColor: 'blue', rivalName: oppData?.username || "Jugador", board: Array(5).fill(null).map(() => Array(5).fill(null).map(() => ({ owner: null, mass: 0 }))) };
+      renderCountdownScreen($c, profile.username, window.CW_SESSION.rivalName, "Juegas de segundo (AZUL)"); startCountdown($c);
     } else {
       const { data: newMatch } = await sb.from('matches').insert([{ player_pink: profile.id, status: 'waiting' }]).select().single();
       _currentMatchId = newMatch.id;
-
       _pollTimer = setInterval(async () => {
         try {
           const { data: checkData } = await sb.from('matches').select('status, player_blue').eq('id', _currentMatchId).single();
           if (checkData && checkData.status === 'playing' && checkData.player_blue !== 'BOT') {
             clearInterval(_pollTimer); clearTimeout(_searchTimer); await payEntryFee();
             const { data: oppData } = await sb.from('users').select('username').eq('id', checkData.player_blue).single();
-            const rivalName = oppData?.username || "Jugador";
-            window.CW_SESSION = { isBotMatch: false, matchId: _currentMatchId, myColor: 'pink', rivalName: rivalName, board: Array(5).fill(null).map(() => Array(5).fill(null).map(() => ({ owner: null, mass: 0 }))) };
-            renderCountdownScreen($c, profile.username, rivalName, "Empiezas tú (ROSA)");
-            startCountdown($c);
+            window.CW_SESSION = { isBotMatch: false, matchId: _currentMatchId, myColor: 'pink', rivalName: oppData?.username || "Jugador", board: Array(5).fill(null).map(() => Array(5).fill(null).map(() => ({ owner: null, mass: 0 }))) };
+            renderCountdownScreen($c, profile.username, window.CW_SESSION.rivalName, "Empiezas tú (ROSA)"); startCountdown($c);
           }
         } catch(e) {}
       }, 1000);
-
       _searchTimer = setTimeout(() => { clearInterval(_pollTimer); setupBotMatchFallback($c, profile); }, SEARCH_TIMEOUT_MS); 
     }
   } catch (err) { window.CW_SESSION = null; setView('dashboard'); }
@@ -123,45 +92,20 @@ async function setupBotMatchFallback($c, profile) {
         const {data: checkMatch} = await sb.from('matches').select('status').eq('id', _currentMatchId).single();
         if(!checkMatch || checkMatch.status === 'cancelled') return; 
     }
-    const isUserPink = Math.random() > 0.5;
-    const randomName = VZLA_NAMES[Math.floor(Math.random() * VZLA_NAMES.length)];
-    const startTime = new Date().toISOString();
-
-    if (_currentMatchId) {
-      await sb.from('matches').update({ player_pink: isUserPink ? profile.id : 'BOT', player_blue: isUserPink ? 'BOT' : profile.id, status: 'playing', match_start_time: startTime, last_move_time: startTime }).eq('id', _currentMatchId);
-    } else {
-        const { data: newMatch } = await sb.from('matches').insert([{ player_pink: isUserPink ? profile.id : 'BOT', player_blue: isUserPink ? 'BOT' : profile.id, status: 'playing', match_start_time: startTime, last_move_time: startTime }]).select().single();
-        _currentMatchId = newMatch.id;
-    }
+    const isUserPink = Math.random() > 0.5; const randomName = VZLA_NAMES[Math.floor(Math.random() * VZLA_NAMES.length)]; const startTime = new Date().toISOString();
+    if (_currentMatchId) { await sb.from('matches').update({ player_pink: isUserPink ? profile.id : 'BOT', player_blue: isUserPink ? 'BOT' : profile.id, status: 'playing', match_start_time: startTime, last_move_time: startTime }).eq('id', _currentMatchId); } 
+    else { const { data: newMatch } = await sb.from('matches').insert([{ player_pink: isUserPink ? profile.id : 'BOT', player_blue: isUserPink ? 'BOT' : profile.id, status: 'playing', match_start_time: startTime, last_move_time: startTime }]).select().single(); _currentMatchId = newMatch.id; }
     await payEntryFee();
     window.CW_SESSION = { isBotMatch: true, matchId: _currentMatchId, botName: randomName, myColor: isUserPink ? 'pink' : 'blue', botColor: isUserPink ? 'blue' : 'pink', board: Array(5).fill(null).map(() => Array(5).fill(null).map(() => ({ owner: null, mass: 0 }))) };
-    renderCountdownScreen($c, profile.username, randomName, isUserPink ? "Empiezas tú (ROSA)" : "Juegas de segundo (AZUL)");
-    startCountdown($c);
+    renderCountdownScreen($c, profile.username, randomName, isUserPink ? "Empiezas tú (ROSA)" : "Juegas de segundo (AZUL)"); startCountdown($c);
   } catch (err) { window.CW_SESSION = null; setView('dashboard'); }
 }
 
 function renderCountdownScreen($c, myName, rivalName, instruction) {
-  $c.innerHTML = `
-  <div class="mm-screen">
-    <div style="display:flex; flex-direction:column; align-items:center; gap:1.5rem;">
-      <div style="width:180px; height:180px; border-radius:50%; border:2px solid var(--border-ghost); display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; background: radial-gradient(circle, rgba(255,0,127,0.1) 0%, rgba(0,0,0,0) 70%);">
-        <span style="font-family:var(--font-mono); font-size:0.7rem; color:var(--text-dim); margin-bottom:5px;">COMIENZA EN</span>
-        <span id="mm-count" class="mm-countdown" style="font-size: 3rem;">10</span>
-      </div>
-      <div style="text-align:center;">
-        <h2 style="font-family:var(--font-display); font-size:1.1rem; color:var(--text-bright); margin-bottom:0.5rem; letter-spacing: 1px;"><span style="color:var(--pink);">${escHtml(myName || 'Tú')}</span> vs <span style="color:var(--blue);">${escHtml(rivalName)}</span></h2>
-        <p style="color:var(--text-dim); font-size:0.85rem; margin-top:10px; font-weight:bold; text-transform:uppercase; letter-spacing:1px;">${instruction}</p>
-      </div>
-    </div>
-  </div>`;
+  $c.innerHTML = `<div class="mm-screen"><div style="display:flex; flex-direction:column; align-items:center; gap:1.5rem;"><div style="width:180px; height:180px; border-radius:50%; border:2px solid var(--border-ghost); display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; background: radial-gradient(circle, rgba(255,0,127,0.1) 0%, rgba(0,0,0,0) 70%);"><span style="font-family:var(--font-mono); font-size:0.7rem; color:var(--text-dim); margin-bottom:5px;">COMIENZA EN</span><span id="mm-count" class="mm-countdown" style="font-size: 3rem;">10</span></div><div style="text-align:center;"><h2 style="font-family:var(--font-display); font-size:1.1rem; color:var(--text-bright); margin-bottom:0.5rem; letter-spacing: 1px;"><span style="color:var(--pink);">${escHtml(myName || 'Tú')}</span> vs <span style="color:var(--blue);">${escHtml(rivalName)}</span></h2><p style="color:var(--text-dim); font-size:0.85rem; margin-top:10px; font-weight:bold; text-transform:uppercase; letter-spacing:1px;">${instruction}</p></div></div></div>`;
 }
 
 function startCountdown($c) {
-  let count = 10;
-  const $count = $c.querySelector('#mm-count');
-  _countdownTimer = setInterval(() => {
-    count--; 
-    if ($count) $count.textContent = count;
-    if (count <= 0) { clearInterval(_countdownTimer); setView('game'); }
-  }, 1000);
+  let count = 10; const $count = $c.querySelector('#mm-count');
+  _countdownTimer = setInterval(() => { count--; if ($count) $count.textContent = count; if (count <= 0) { clearInterval(_countdownTimer); setView('game'); } }, 1000);
 }
