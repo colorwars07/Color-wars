@@ -1,7 +1,7 @@
 /**
  * ═══════════════════════════════════════════════════════
  * COLOR WARS — js/views/auth.js
- * Auth: Login · Register · Reset Password (REDRECCIÓN CORREGIDA)
+ * Auth: Login · Register · Reset Password (FIJADO)
  * ═══════════════════════════════════════════════════════
  */
 
@@ -14,43 +14,47 @@ registerView('auth', initAuthView);
 export async function initAuthView($container) {
   $container.innerHTML = buildHTML();
   attachEvents($container);
-  setTimeout(() => $container.querySelector('#login-email')?.focus(), 120);
 
-  // 📡 RADAR DE ESTADO DE AUTENTICACIÓN
-  // Escuchamos si Supabase nos dice que estamos en modo "Recuperación"
+  // 🚨 EL FIX: Leemos la URL a la fuerza apenas entramos.
+  // Si en el link del correo viene la orden de recuperación, activamos el modo.
+  if (window.location.href.includes('type=recovery')) {
+    activateRecoveryMode($container);
+  } else {
+    setTimeout(() => $container.querySelector('#login-email')?.focus(), 120);
+  }
+
+  // Mantenemos el radar de Supabase por si acaso llega tarde
   const sb = getSupabase();
   sb.auth.onAuthStateChange(async (event, session) => {
-    const $loginForm = $container.querySelector('#form-login');
-    const $registerForm = $container.querySelector('#form-register');
-    const $resetPassForm = $container.querySelector('#form-reset-password');
-    const $tabs = $container.querySelector('.auth-tabs');
-    const $subtitle = $container.querySelector('.auth-subtitle');
-    const $forgotBtn = $container.querySelector('#btn-forgot');
-
-    // Helper para ocultar todos los formularios
-    const hideAllForms = () => {
-      if ($loginForm) $loginForm.style.display = 'none';
-      if ($registerForm) $registerForm.style.display = 'none';
-      if ($resetPassForm) $resetPassForm.style.display = 'none';
-    };
-
-    if (event === 'SIGNED_IN') {
-      // Usuario logueado, redirigir. (Aunque esto lo maneja app.js)
-    } else if (event === 'PASSWORD_RECOVERY') {
-      // 💥 ¡AQUÍ ESTÁ EL TRUCO! 💥
-      // El usuario viene de abrir el correo de recuperación.
-      // Ocultamos el login/registro y mostramos el formulario de CONTRASEÑA NUEVA.
-      hideAllForms();
-      $resetPassForm.style.display = '';
-      $tabs.style.display = 'none'; // Ocultar pestañas de login/registro
-      $forgotBtn.style.display = 'none'; // Ocultar botón de "olvidaste"
-      $subtitle.textContent = "Crea una nueva contraseña"; // Actualizar subtítulo
-      $subtitle.style.color = "var(--pink)"; // Ponerlo rosita
-      
-      // Foco en el primer campo de la contraseña nueva
-      setTimeout(() => $container.querySelector('#new-pass')?.focus(), 120);
+    if (event === 'PASSWORD_RECOVERY') {
+      activateRecoveryMode($container);
     }
   });
+}
+
+// ── FUNCIÓN PARA MOSTRAR LA PANTALLA DE NUEVA CLAVE ──
+function activateRecoveryMode($c) {
+  const $loginForm = $c.querySelector('#form-login');
+  const $registerForm = $c.querySelector('#form-register');
+  const $resetPassForm = $c.querySelector('#form-reset-password');
+  const $tabs = $c.querySelector('.auth-tabs');
+  const $subtitle = $c.querySelector('.auth-subtitle');
+  const $forgotBtn = $c.querySelector('#btn-forgot');
+
+  // Apagamos lo viejo
+  if ($loginForm) $loginForm.style.display = 'none';
+  if ($registerForm) $registerForm.style.display = 'none';
+  if ($tabs) $tabs.style.display = 'none';
+  if ($forgotBtn) $forgotBtn.style.display = 'none';
+
+  // Encendemos lo nuevo
+  if ($resetPassForm) $resetPassForm.style.display = '';
+  if ($subtitle) {
+    $subtitle.textContent = "Crea una nueva contraseña";
+    $subtitle.style.color = "var(--blue)"; 
+  }
+
+  setTimeout(() => $c.querySelector('#new-pass')?.focus(), 120);
 }
 
 // ── HTML ──────────────────────────────────────────────
@@ -142,8 +146,8 @@ function buildHTML() {
           <span class="field-error" id="new-confirm-err"></span>
         </div>
         <div id="reset-global-err" class="field-error" style="margin-bottom:.75rem;"></div>
-        <button id="btn-save-new-pass" class="btn btn-primary" style="width:100%;height:46px;font-size:.76rem;letter-spacing:.14em;">
-          GUARDAR NUEVA CONTRASEÑA
+        <button id="btn-save-new-pass" class="btn btn-primary" style="width:100%;height:46px;font-size:.76rem;letter-spacing:.14em;background:linear-gradient(90deg, #00f0ff, #0055ff);color:white;border:none;">
+          GUARDAR CLAVE
         </button>
       </div>
 
@@ -167,12 +171,10 @@ function attachEvents($c) {
     });
   });
 
-  // Presionar Enter en los campos
   $c.querySelector('#login-pass')?.addEventListener('keydown', e => { if (e.key === 'Enter') handleLogin($c); });
   $c.querySelector('#reg-confirm')?.addEventListener('keydown', e => { if (e.key === 'Enter') handleRegister($c); });
   $c.querySelector('#new-confirm')?.addEventListener('keydown', e => { if (e.key === 'Enter') handleResetPassword($c); });
 
-  // Clics en botones
   $c.querySelector('#btn-login')?.addEventListener('click',    () => handleLogin($c));
   $c.querySelector('#btn-register')?.addEventListener('click', () => handleRegister($c));
   $c.querySelector('#btn-forgot')?.addEventListener('click',   () => handleForgot($c));
@@ -187,7 +189,7 @@ function switchTab(tab, $c) {
   });
   $c.querySelector('#form-login').style.display    = tab === 'login'    ? '' : 'none';
   $c.querySelector('#form-register').style.display = tab === 'register' ? '' : 'none';
-  $c.querySelector('#form-reset-password').style.display = 'none'; // Ocultar formulario de reset
+  $c.querySelector('#form-reset-password').style.display = 'none'; 
   clearErrors($c);
   setTimeout(() => {
     $c.querySelector(tab === 'login' ? '#login-email' : '#reg-email')?.focus();
@@ -220,7 +222,7 @@ async function handleLogin($c) {
   }
 }
 
-// ── Register (CON REDIRECCIÓN FIJA) ───────────────────
+// ── Register ──────────────────────────────────────────
 async function handleRegister($c) {
   clearErrors($c);
   const email   = $c.querySelector('#reg-email').value.trim();
@@ -240,13 +242,11 @@ async function handleRegister($c) {
   setBtnLoading($btn, true, 'CREANDO…');
   const sb = getSupabase();
 
-  // 🚀 INYECCIÓN DE REDIRECCIÓN AQUÍ (URL CORREGIDA CON EL GUION):
   const { data: authData, error: authErr } = await sb.auth.signUp({
     email,
     password: pass,
     options: { 
       data: { username: user },
-      // Esto asegura que al confirmar el correo, el chamo caiga en el Login
       emailRedirectTo: 'https://color-wars-mu.vercel.app/#auth' 
     },
   });
@@ -259,7 +259,6 @@ async function handleRegister($c) {
     return;
   }
 
-  // Verificación estricta de creación de billetera
   if (authData?.user) {
     const { error: insertErr } = await sb.from('users').insert({
       id:       authData.user.id,
@@ -283,9 +282,12 @@ async function handleRegister($c) {
   showToast(`¡Cuenta creada! Revisa tu correo para confirmar.`, 'success', 6000);
 }
 
-// ── Forgot Password ────────────────────────────────────
+// ── Forgot Password (CON TIMER DE 30s) ─────────────────
 async function handleForgot($c) {
   const email = $c.querySelector('#login-email').value.trim();
+  const $btn = $c.querySelector('#btn-forgot');
+
+  if ($btn.disabled) return;
 
   if (!isEmail(email)) {
     showErr($c, 'login-email-err', 'Ingresa tu correo primero.');
@@ -293,26 +295,37 @@ async function handleForgot($c) {
     return;
   }
 
-  const $btn = $c.querySelector('#btn-forgot');
   setBtnLoading($btn, true, 'ENVIANDO…');
   const sb = getSupabase();
 
   const { error } = await sb.auth.resetPasswordForEmail(email, {
-    // Redirección para recuperación de contraseña (URL CORREGIDA CON EL GUION)
     redirectTo: 'https://color-wars-mu.vercel.app/#auth',
   });
 
-  setBtnLoading($btn, false, '¿Olvidaste tu contraseña?');
-
   if (error) {
+    setBtnLoading($btn, false, '¿Olvidaste tu contraseña?');
     showToast('Error al enviar el correo. Intenta de nuevo.', 'error');
   } else {
     showToast('Revisa tu bandeja de entrada para recuperar tu acceso.', 'success', 6000);
+    
+    let cooldownTime = 30;
+    $btn.disabled = true;
+    $btn.style.opacity = '0.5';
+    $btn.textContent = `REINTENTAR EN ${cooldownTime}s`;
+
+    const timer = setInterval(() => {
+      cooldownTime--;
+      if (cooldownTime <= 0) {
+        clearInterval(timer);
+        setBtnLoading($btn, false, '¿Olvidaste tu contraseña?');
+      } else {
+        $btn.textContent = `REINTENTAR EN ${cooldownTime}s`;
+      }
+    }, 1000);
   }
 }
 
-// ── Reestablecer Contraseña (handleResetPassword) ──
-// Esta es la nueva función que guarda la clave
+// ── GUARDAR NUEVA CONTRASEÑA ──────────────────────────
 async function handleResetPassword($c) {
   clearErrors($c);
   const pass    = $c.querySelector('#new-pass').value;
@@ -327,19 +340,19 @@ async function handleResetPassword($c) {
   setBtnLoading($btn, true, 'GUARDANDO…');
   const sb = getSupabase();
 
-  // 🔑 Aquí está la función clave de Supabase que actualiza la contraseña
   const { error } = await sb.auth.updateUser({ password: pass });
 
-  setBtnLoading($btn, false, 'GUARDAR NUEVA CONTRASEÑA');
+  setBtnLoading($btn, false, 'GUARDAR CLAVE');
 
   if (error) {
     showErr($c, 'reset-global-err', error.message);
     shakeBox();
   } else {
-    showToast('¡Contraseña actualizada con éxito! Redirigiendo...', 'success', 3000);
-    $c.querySelector('#form-reset-password').style.display = 'none'; // Ocultar formulario de reset
+    showToast('¡Contraseña actualizada con éxito!', 'success', 3000);
     
-    // Redirigir al dashboard después de un pequeño delay
+    // Limpiar la URL para que no vuelva a entrar en modo recuperación
+    window.history.replaceState({}, document.title, "/#auth");
+    
     setTimeout(() => {
         setView('dashboard');
     }, 1500);
