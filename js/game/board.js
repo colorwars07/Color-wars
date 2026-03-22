@@ -6,6 +6,14 @@ const BOARD_SIZE = 5; let _active = false; let _currentTurn = 'pink'; let _isAni
 // 🔒 CIRUGÍA: Variables del candado y strikes del rival
 let _lockPollingUntil = 0; let _opponentMissedTurns = 0;
 
+// 🔊 CONFIGURACIÓN DE SONIDOS (Usando Howler)
+const sfx = {
+  click: new Howl({ src: ['https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3'], volume: 0.5 }),
+  pop:   new Howl({ src: ['https://assets.mixkit.co/active_storage/sfx/2578/2578-preview.mp3'], volume: 0.6 }),
+  boom:  new Howl({ src: ['https://assets.mixkit.co/active_storage/sfx/2579/2579-preview.mp3'], volume: 0.8 }),
+  win:   new Howl({ src: ['https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3'], volume: 0.7 })
+};
+
 registerView('game', initGameView);
 
 export async function initGameView($container) {
@@ -69,6 +77,9 @@ function renderHTML() {
     html.light .board-wrap, html.light #grid { background: #f4f4f7 !important; border: 1px solid #c0c0c8 !important; box-shadow: 0 4px 15px rgba(0,0,0,0.05) !important; }
     html.light .cell { background: #ffffff !important; border: 1px solid #e0e0ea !important; }
     html.light #btn-surrender { border-color: #11111a !important; color: #11111a !important; }
+    
+    /* Efecto de pulso suave para las fichas */
+    .cell-mass { transition: transform 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
   </style>
   <div class="game-arena">
     <div style="background: rgba(10, 10, 15, 0.9); border: 1px solid var(--border-ghost); border-radius: 14px; padding: 12px; margin-bottom: 20px; width: 95%; max-width: 380px; display: flex; flex-direction: column; gap: 8px;">
@@ -120,8 +131,6 @@ function _startMasterClock() {
         if (!_active) return clearInterval(_masterClockTimer);
         const now = Date.now();
 
-        // 🗑️ CIRUGÍA: Extirpada la regla vieja de los 40s (ahora se usan strikes AFK)
-
         let globalLeft = 180 - Math.floor((now - _dbStartTime) / 1000);
         if (globalLeft < 0) globalLeft = 0; 
         const gt = _$container.querySelector('#global-timer');
@@ -142,7 +151,6 @@ function _startMasterClock() {
         } else {
             if (turnEl) turnEl.innerHTML = `<span style="color:#aaa;">ESPERANDO RIVAL: ${Math.max(0, turnLeft)}s</span>`;
             
-            // 🛡️ CIRUGÍA: ÁRBITRO AFK (El que tiene internet castiga al desconectado)
             if (!window.CW_SESSION.isBotMatch && turnLeft <= -2 && !_isAnimating) {
                 _opponentMissedTurns++; _dbLastMoveTime = now;
                 if (_opponentMissedTurns >= 3) {
@@ -164,7 +172,14 @@ function handlePlayerClick(row, col) {
   let myPieces = 0; window.CW_SESSION.board.forEach(r => r.forEach(c => { if (c.owner === myColor) myPieces++; }));
   if (myPieces > 0 && cell.owner !== myColor) { showToast("Solo puedes presionar tus fichas", "warning"); return; }
   if (cell.owner && cell.owner !== myColor) return;
-  _missedTurns = 0; _addMass(row, col, myColor); // Resetea tus strikes si tocas una ficha
+
+  // ⚡ FEEDBACK: Sonido + Vibración + Salto GSAP
+  sfx.click.play();
+  if (navigator.vibrate) navigator.vibrate(15);
+  const domCell = _$container.querySelector(`[data-r="${row}"][data-c="${col}"]`);
+  gsap.from(domCell, { scale: 0.8, duration: 0.12, ease: "back.out(2)" });
+
+  _missedTurns = 0; _addMass(row, col, myColor); 
 }
 
 async function _addMass(row, col, color) {
@@ -174,7 +189,22 @@ async function _addMass(row, col, color) {
 
 async function _processMass(row, col, color) {
   const cell = window.CW_SESSION.board[row][col]; cell.owner = color; cell.mass++;
-  if (cell.mass >= 4) await _explode(row, col, color); else updateDOM();
+  
+  // ⚡ ANIMACIÓN GSAP: La ficha "salta" al crecer
+  const domCell = _$container.querySelector(`[data-r="${row}"][data-c="${col}"]`);
+  gsap.to(domCell.querySelector('.cell-mass'), { scale: 1.25, duration: 0.08, yoyo: true, repeat: 1 });
+
+  if (cell.mass >= 4) {
+    // 💥 EXPLOSIÓN: Sonido duro + Vibración fuerte + Sacudida de pantalla
+    sfx.boom.play();
+    if (navigator.vibrate) navigator.vibrate([40, 30, 40]);
+    gsap.to(".board-wrap", { x: 5, y: 5, duration: 0.05, repeat: 5, yoyo: true });
+    
+    await _explode(row, col, color); 
+  } else {
+    sfx.pop.play(); // Sonido suave de toque
+    updateDOM();
+  }
 }
 
 async function _explode(row, col, color) {
@@ -182,14 +212,13 @@ async function _explode(row, col, color) {
   const n = [];
   if (row > 0) n.push({row: row - 1, col}); if (row < 4) n.push({row: row + 1, col});
   if (col > 0) n.push({row, col: col - 1}); if (col < 4) n.push({row, col: col + 1});
-  await new Promise(r => setTimeout(r, 200));
+  await new Promise(r => setTimeout(r, 180));
   for (const pos of n) await _processMass(pos.row, pos.col, color);
 }
 
 function _passTurn() {
   _currentTurn = _currentTurn === 'pink' ? 'blue' : 'pink'; _dbLastMoveTime = Date.now(); _turnCount++; updateDOM();
   
-  // 🔒 CIRUGÍA: CERRAMOS EL CANDADO (No escuchar a Supabase por 2.5s al pasar turno)
   _lockPollingUntil = Date.now() + 2500;
   
   if (window.CW_SESSION.matchId) { getSupabase().from('matches').update({ board_state: window.CW_SESSION.board, current_turn: _currentTurn, last_move_time: new Date(_dbLastMoveTime).toISOString() }).eq('id', window.CW_SESSION.matchId).then(); }
@@ -286,33 +315,35 @@ function _finishGame(winnerColor, fromDB = false, reason = null) {
   clearInterval(_masterClockTimer); clearInterval(_pollTimer); 
   
   const win = winnerColor === window.CW_SESSION.myColor;
-  // 🔥 CIRUGÍA VISUAL: Si es derrota, rojo. Si es victoria, respeta tu color (rosa o morado suave)
+  
+  // ⚡ FEEDBACK FINAL: Sonido Victoria + Vibración Épica
+  if (win) { sfx.win.play(); if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 400]); }
+
   const myRealColor = window.CW_SESSION.myColor === 'pink' ? 'var(--pink)' : '#a855f7';
   const titleColor = win ? myRealColor : '#ff4444';
   const titleText = win ? 'VICTORIA' : 'DERROTA';
   
   const overlay = document.createElement('div');
   overlay.id = "cw-final-overlay";
-  overlay.style.cssText = `position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(10, 10, 15, 0.95); z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; backdrop-filter: blur(8px);`;
+  overlay.style.cssText = `position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(10, 10, 15, 0.95); z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; backdrop-filter: blur(12px); opacity: 0;`;
   
   overlay.innerHTML = `
-    <h1 style="color:${titleColor}; font-size:3.5rem; font-family:var(--font-display); text-transform:uppercase; margin-bottom:10px; text-shadow: 0 0 20px ${titleColor}; letter-spacing: 2px;">${titleText}</h1>
+    <h1 id="final-title" style="color:${titleColor}; font-size:3.5rem; font-family:var(--font-display); text-transform:uppercase; margin-bottom:10px; text-shadow: 0 0 20px ${titleColor}; letter-spacing: 2px;">${titleText}</h1>
     <p style="color:#aaa; font-family:var(--font-mono); font-size:1rem; margin-bottom:40px; text-transform:uppercase; letter-spacing:1px;">${reason || (win ? '+50 CP AÑADIDOS' : 'Sigue practicando en la arena')}</p>
     <button class="btn btn-primary" id="btn-return-dash-final" style="width:250px; font-size:1.2rem; padding:15px;">VOLVER AL MENÚ</button>
   `;
   document.body.appendChild(overlay);
 
+  // ⚡ ANIMACIÓN GSAP: El cartel entra suavemente
+  gsap.to(overlay, { opacity: 1, duration: 0.5 });
+  gsap.from("#final-title", { scale: 0.5, duration: 0.6, ease: "elastic.out(1, 0.3)" });
+
   document.getElementById('btn-return-dash-final').addEventListener('click', () => {
      const btn = document.getElementById('btn-return-dash-final');
      btn.textContent = "SALIENDO..."; btn.disabled = true;
-     
      window.sessionStorage.setItem('cw_skip_recon', '1');
-     
      if (window.CW_SESSION && window.CW_SESSION.matchId) { getSupabase().from('matches').update({ status:'finished' }).eq('id', window.CW_SESSION.matchId).then(); }
-     
-     window.CW_SESSION = null; 
-     document.body.removeChild(overlay); 
-     setView('dashboard'); 
+     window.CW_SESSION = null; document.body.removeChild(overlay); setView('dashboard'); 
   });
 
   if (!fromDB && window.CW_SESSION.matchId) { getSupabase().from('matches').update({ status:'finished', winner:winnerColor }).eq('id', window.CW_SESSION.matchId).then(); }
