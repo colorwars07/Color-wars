@@ -22,10 +22,8 @@ export async function initDashboardView($container) {
 
   // 🛡️ REVISIÓN DEL ESCUDO
   if (window.sessionStorage.getItem('cw_skip_recon')) {
-      // Si el escudo está activo, lo apagamos para el futuro y OMITIMOS buscar partidas viejas
       window.sessionStorage.removeItem('cw_skip_recon');
   } else {
-      // Si entraste normal a la app (recargaste la página), sí busca reconectarte
       const profile = getProfile();
       if (profile) {
         const isReconnected = await checkActiveMatch(profile);
@@ -67,6 +65,8 @@ async function checkActiveMatch(profile) {
 function injectStoreStyles() {
   if (document.getElementById('cw-store-styles')) return;
   const style = document.createElement('style'); style.id = 'cw-store-styles';
+  
+  // 🌓 CIRUGÍA: Conservamos tus estilos originales, pero al final inyectamos las reglas del Modo Claro
   style.innerHTML = `
     .cp-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 15px; margin-bottom: 15px; }
     .cp-card { background: linear-gradient(145deg, #11111a, #1a1a2e); border: 1px solid var(--border-ghost); border-radius: 15px; padding: 15px 10px; text-align: center; cursor: pointer; position: relative; overflow: hidden; transition: all 0.3s; box-shadow: 0 5px 15px rgba(0,0,0,0.5); }
@@ -79,6 +79,23 @@ function injectStoreStyles() {
     header .wallet, header .balance-usd, .top-bar-wallet { display: none !important; opacity: 0 !important; }
     .bank-option { padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.1); color: white; font-family: var(--font-mono); font-size: 0.75rem; text-align: left; cursor: pointer; transition: background 0.2s; }
     .bank-option:hover { background: rgba(255,0,255,0.2); } .bank-option:last-child { border-bottom: none; }
+
+    /* 🔥 INYECCIÓN MODO CLARO ÉLITE (Solo aplica al tocar el Sol) */
+    html.light .wallet-card, html.light .card, html.light .card-acc {
+      background: #ffffff !important;
+      border: 1px solid #e0e0ea !important;
+      box-shadow: 0 8px 25px rgba(0,0,0,0.05) !important;
+    }
+    html.light .dash-grid p, html.light .dash-grid span, html.light .dash-grid div {
+       text-shadow: none !important;
+    }
+    html.light .wallet-label, html.light .wallet-usd, html.light .wallet-amount, 
+    html.light .wallet-amount span, html.light .card-acc p, html.light .lb-table td, 
+    html.light .lb-table th {
+       color: #11111a !important;
+    }
+    html.light .btn-neon, html.light .btn-battle { color: #ffffff !important; }
+    html.light #btn-withdraw { border-color: #11111a !important; color: #11111a !important; }
   `; document.head.appendChild(style);
 }
 
