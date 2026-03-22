@@ -50,8 +50,26 @@ function _startPolling() {
 }
 
 function renderHTML() {
-  const myColor = window.CW_SESSION.myColor; const rivalName = window.CW_SESSION.rivalName || window.CW_SESSION.botName || 'RIVAL'; const youColorVar = myColor === 'pink' ? 'var(--pink)' : 'var(--blue)'; const rivalColorVar = myColor === 'pink' ? 'var(--blue)' : 'var(--pink)';
+  const myColor = window.CW_SESSION.myColor; const rivalName = window.CW_SESSION.rivalName || window.CW_SESSION.botName || 'RIVAL'; 
+  
+  // 🔥 CIRUGÍA VISUAL: Reemplazamos el 'blue' por Morado Suave (#a855f7)
+  const youColorVar = myColor === 'pink' ? 'var(--pink)' : '#a855f7'; 
+  const rivalColorVar = myColor === 'pink' ? '#a855f7' : 'var(--pink)';
+  
   _$container.innerHTML = `
+  <style>
+    /* 🔥 FORZAR MORADO SUAVE EN LAS FICHAS AZULES (Aplica en ambos modos) */
+    .cell-blue .mass-orb { background-color: #a855f7 !important; box-shadow: 0 0 8px #a855f7 !important; }
+    
+    /* 🌓 SOBREESCRITURAS DEL MODO CLARO ÉLITE (Solo se activa con la clase html.light) */
+    html.light .game-arena > div:first-child { background: #ffffff !important; border: 1px solid #e0e0ea !important; box-shadow: 0 8px 25px rgba(0,0,0,0.05) !important; }
+    html.light .game-arena span { color: #11111a !important; text-shadow: none !important; }
+    html.light #global-timer { color: #ffaa00 !important; } /* Preservamos el naranja del reloj */
+    html.light #score-you, html.light #score-rival { color: #11111a !important; }
+    html.light .board-wrap, html.light #grid { background: #f4f4f7 !important; border: 1px solid #c0c0c8 !important; box-shadow: 0 4px 15px rgba(0,0,0,0.05) !important; }
+    html.light .cell { background: #ffffff !important; border: 1px solid #e0e0ea !important; }
+    html.light #btn-surrender { border-color: #11111a !important; color: #11111a !important; }
+  </style>
   <div class="game-arena">
     <div style="background: rgba(10, 10, 15, 0.9); border: 1px solid var(--border-ghost); border-radius: 14px; padding: 12px; margin-bottom: 20px; width: 95%; max-width: 380px; display: flex; flex-direction: column; gap: 8px;">
         <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -268,7 +286,9 @@ function _finishGame(winnerColor, fromDB = false, reason = null) {
   clearInterval(_masterClockTimer); clearInterval(_pollTimer); 
   
   const win = winnerColor === window.CW_SESSION.myColor;
-  const titleColor = win ? 'var(--pink)' : '#ff4444';
+  // 🔥 CIRUGÍA VISUAL: Si es derrota, rojo. Si es victoria, respeta tu color (rosa o morado suave)
+  const myRealColor = window.CW_SESSION.myColor === 'pink' ? 'var(--pink)' : '#a855f7';
+  const titleColor = win ? myRealColor : '#ff4444';
   const titleText = win ? 'VICTORIA' : 'DERROTA';
   
   const overlay = document.createElement('div');
