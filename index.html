@@ -7,12 +7,20 @@
   <meta name="description" content="Color Wars — Arena de batallas cromáticas 1vs1" />
   <title>COLOR WARS</title>
 
-  <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&family=Rajdhani:wght@300;400;600;700&display=swap" rel="stylesheet" />
 
-  <!-- Tailwind CDN config MUST come before the script tag -->
+  <script>
+    (function() {
+      const savedTheme = localStorage.getItem('cw_theme') || 'dark';
+      if (savedTheme === 'light') {
+        document.documentElement.classList.remove('dark');
+        document.documentElement.classList.add('light');
+      }
+    })();
+  </script>
+
   <script>
     window.tailwind = window.tailwind || {};
     window.__TW_CONFIG__ = {
@@ -42,22 +50,76 @@
   </script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
-    // Apply config after Tailwind loads
     if (window.tailwind && window.tailwind.config) {
       tailwind.config = window.__TW_CONFIG__;
     }
   </script>
 
-  <!-- Supabase JS v2 CDN -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 
-  <!-- App styles -->
   <link rel="stylesheet" href="css/styles.css" />
+
+  <style id="theme-overrides">
+    html.light body { background-color: #f4f5f9 !important; color: #11111a !important; }
+    html.light .bg-void { background-color: #f4f5f9 !important; }
+    html.light .text-text-base { color: #11111a !important; }
+    html.light .text-text-ghost { color: #777799 !important; }
+    html.light .text-text-dim { color: #555577 !important; }
+    
+    /* 🟪 Tablero Blanco con Bordes Morado Neón */
+    html.light .board-wrap, html.light .board-grid, html.light #grid { 
+      background-color: #ffffff !important; 
+      border: 2px solid #aa00ff !important; 
+      box-shadow: 0 0 25px rgba(170, 0, 255, 0.35) !important; 
+    }
+    html.light .cell { 
+      background-color: #ffffff !important; 
+      border: 1px solid #aa00ff !important; 
+    }
+    
+    /* ⬜ Cajas y modales (Auth, Dashboard, Game Arena) */
+    html.light .auth-box, 
+    html.light .game-arena > div,
+    html.light .modal-content,
+    html.light .stat-card { 
+      background: #ffffff !important; 
+      border: 1px solid #aa00ff !important; 
+      box-shadow: 0 15px 35px rgba(170, 0, 255, 0.12) !important; 
+      color: #11111a !important; 
+    }
+    
+    /* Textos del tablero y UI */
+    html.light #score-you, html.light #score-rival, html.light #global-timer, html.light #turn-indicator span { 
+      text-shadow: none !important; 
+      font-weight: 900 !important;
+    }
+    html.light #turn-indicator { color: #11111a !important; }
+
+    /* Entradas de texto (Inputs) */
+    html.light .input-field { 
+      background: #f4f5f9 !important; 
+      color: #11111a !important; 
+      border-color: #d0d0e0 !important; 
+    }
+    html.light .input-field:focus { 
+      border-color: #aa00ff !important; 
+      box-shadow: 0 0 10px rgba(170, 0, 255, 0.2) !important; 
+    }
+    html.light .field-label { color: #333 !important; }
+    
+    /* Pantalla de carga */
+    html.light .loading-screen { background-color: #f4f5f9 !important; }
+    html.light .loading-status { color: #11111a !important; }
+    html.light .loading-bar-track { background-color: #d0d0e0 !important; }
+
+    /* Pestañas de Auth */
+    html.light .auth-tab { color: #777799 !important; }
+    html.light .auth-tab.active { color: #aa00ff !important; border-bottom-color: #aa00ff !important; }
+  </style>
 </head>
 
 <body class="bg-void text-text-base font-body min-h-screen overflow-x-hidden">
 
-  <!-- ═══ BACKGROUND EFFECTS ════════════════════════════════ -->
   <div id="bg-effects" aria-hidden="true">
     <div id="bg-grid"></div>
     <div id="bg-scanline"></div>
@@ -65,7 +127,6 @@
     <div id="bg-particles"></div>
   </div>
 
-  <!-- ═══ GLOBAL HEADER ════════════════════════════════════ -->
   <header id="app-header" class="hidden" role="banner">
     <div id="header-logo">
       <span id="header-title" class="font-display font-black text-lg tracking-widest">
@@ -73,15 +134,19 @@
       </span>
     </div>
     <div id="header-right" class="flex items-center gap-3">
+      
+      <button id="btn-theme-toggle" class="btn btn-ghost flex items-center justify-center" style="padding: 0; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--border-ghost); font-size: 1.1rem;" aria-label="Cambiar tema">
+        <span id="icon-sun">☀️</span>
+        <span id="icon-moon" class="hidden">🌙</span>
+      </button>
+
       <div id="header-wallet" class="hidden"></div>
       <div id="header-user"   class="hidden"></div>
     </div>
   </header>
 
-  <!-- ═══ MAIN SPA ROOT ════════════════════════════════════ -->
   <main id="app-root" role="main">
 
-    <!-- Loading screen -->
     <div id="loading-screen" class="loading-screen">
       <div class="loading-inner">
         <div class="loading-logo font-display font-black">
@@ -94,7 +159,6 @@
       </div>
     </div>
 
-    <!-- Views (each module injects HTML here) -->
     <section id="view-auth"        class="view hidden" data-view="auth"></section>
     <section id="view-dashboard"   class="view hidden" data-view="dashboard"></section>
     <section id="view-matchmaking" class="view hidden" data-view="matchmaking"></section>
@@ -103,15 +167,12 @@
 
   </main>
 
-  <!-- ═══ GLOBAL MODAL ════════════════════════════════════ -->
   <div id="modal-overlay" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-label="Modal">
     <div id="modal-content" class="modal-content"></div>
   </div>
 
-  <!-- ═══ TOAST CONTAINER ════════════════════════════════ -->
   <div id="toast-container" class="toast-container" role="status" aria-live="polite" aria-atomic="false"></div>
 
-  <!-- ═══ FAB WHATSAPP ════════════════════════════════════ -->
   <a id="fab-whatsapp"
      href="https://wa.me/584123400994"
      target="_blank"
@@ -125,15 +186,12 @@
     <span class="fab-pulse" aria-hidden="true"></span>
   </a>
 
-  <!-- ═══ FOOTER (admin trigger) ════════════════════════ -->
   <footer id="app-footer" class="app-footer">
     <span id="footer-trigger" class="font-display text-xs text-text-ghost cursor-default select-none">CW · v2.0</span>
     <span class="text-xs text-text-ghost font-mono">© 2025 COLOR WARS</span>
   </footer>
 
-  <!-- ═══ MODULES (ES6, ordered by dependency) ════════════ -->
   <script type="module">
-    // Robust boot — catches any load error and shows toast instead of blank screen
     window.addEventListener('error', (e) => {
       console.error('[Boot Error]', e);
       const $s = document.getElementById('loading-status');
@@ -141,12 +199,10 @@
     });
 
     try {
-      // Dynamic imports in dependency order
       const { initSupabase }   = await import('./js/core/supabase.js');
       const { initState }      = await import('./js/core/state.js');
       const { boot }           = await import('./js/core/app.js');
 
-      // These are imported for their side effects (register themselves)
       await import('./js/views/auth.js');
       await import('./js/views/dashboard.js');
       await import('./js/views/admin.js');
