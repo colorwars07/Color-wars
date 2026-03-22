@@ -1,7 +1,7 @@
 /**
  * ═══════════════════════════════════════════════════════
  * COLOR WARS — js/views/auth.js
- * Auth: Login · Register · Reset Password (REDRECCIÓN CORREGIDA)
+ * Auth: Login · Register · Reset Password + TIMER 30s
  * ═══════════════════════════════════════════════════════
  */
 
@@ -11,14 +11,13 @@ import { setView }                                 from '../core/state.js';
 
 registerView('auth', initAuthView);
 
-let _radarAttached = false; // 🔒 El seguro para que no se repita el evento
+let _radarAttached = false; 
 
 export async function initAuthView($container) {
   $container.innerHTML = buildHTML();
   attachEvents($container);
   setTimeout(() => $container.querySelector('#login-email')?.focus(), 120);
 
-  // 📡 RADAR DE RECUPERACIÓN ADENTRO DE LA VISTA (Supabase ya está listo aquí)
   if (!_radarAttached) {
     _radarAttached = true;
     getSupabase().auth.onAuthStateChange(async (event, session) => {
@@ -208,7 +207,7 @@ async function handleLogin($c) {
   }
 }
 
-// ── Register (CON REDIRECCIÓN FIJA) ───────────────────
+// ── Register ──────────────────────────────────────────
 async function handleRegister($c) {
   clearErrors($c);
   const email   = $c.querySelector('#reg-email').value.trim();
@@ -228,13 +227,11 @@ async function handleRegister($c) {
   setBtnLoading($btn, true, 'CREANDO…');
   const sb = getSupabase();
 
-  // 🚀 INYECCIÓN DE REDIRECCIÓN AQUÍ (URL CORREGIDA CON EL GUION):
   const { data: authData, error: authErr } = await sb.auth.signUp({
     email,
     password: pass,
     options: { 
       data: { username: user },
-      // Esto asegura que al confirmar el correo, el chamo caiga en el Login
       emailRedirectTo: 'https://color-wars-mu.vercel.app/#auth' 
     },
   });
@@ -247,7 +244,6 @@ async function handleRegister($c) {
     return;
   }
 
-  // Verificación estricta de creación de billetera
   if (authData?.user) {
     const { error: insertErr } = await sb.from('users').insert({
       id:       authData.user.id,
@@ -271,9 +267,13 @@ async function handleRegister($c) {
   showToast(`¡Cuenta creada! Revisa tu correo para confirmar.`, 'success', 6000);
 }
 
-// ── Forgot Password ────────────────────────────────────
+// ── Forgot Password (CON TIMER DE 30s) ─────────────────
 async function handleForgot($c) {
   const email = $c.querySelector('#login-email').value.trim();
+  const $btn = $c.querySelector('#btn-forgot');
+
+  // Si el botón está deshabilitado (el timer está corriendo), no hacemos nada
+  if ($btn.disabled) return;
 
   if (!isEmail(email)) {
     showErr($c, 'login-email-err', 'Ingresa tu correo primero.');
@@ -281,21 +281,34 @@ async function handleForgot($c) {
     return;
   }
 
-  const $btn = $c.querySelector('#btn-forgot');
   setBtnLoading($btn, true, 'ENVIANDO…');
   const sb = getSupabase();
 
   const { error } = await sb.auth.resetPasswordForEmail(email, {
-    // Redirección para recuperación de contraseña (URL CORREGIDA CON EL GUION)
     redirectTo: 'https://color-wars-mu.vercel.app/#auth',
   });
 
-  setBtnLoading($btn, false, '¿Olvidaste tu contraseña?');
-
   if (error) {
+    setBtnLoading($btn, false, '¿Olvidaste tu contraseña?');
     showToast('Error al enviar el correo. Intenta de nuevo.', 'error');
   } else {
     showToast('Revisa tu bandeja de entrada para recuperar tu acceso.', 'success', 6000);
+    
+    // Iniciar cooldown de 30 segundos
+    let cooldownTime = 30;
+    $btn.disabled = true;
+    $btn.style.opacity = '0.5';
+    $btn.textContent = `REINTENTAR EN ${cooldownTime}s`;
+
+    const timer = setInterval(() => {
+      cooldownTime--;
+      if (cooldownTime <= 0) {
+        clearInterval(timer);
+        setBtnLoading($btn, false, '¿Olvidaste tu contraseña?');
+      } else {
+        $btn.textContent = `REINTENTAR EN ${cooldownTime}s`;
+      }
+    }, 1000);
   }
 }
 
