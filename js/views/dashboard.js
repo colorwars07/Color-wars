@@ -1,16 +1,6 @@
-/**
- * ═══════════════════════════════════════════════════════
- * COLOR WARS — js/views/dashboard.js
- * DASHBOARD C/ ESCUDO ANTI-RECONEXIÓN
- * ═══════════════════════════════════════════════════════
- */
-
 import { registerView, showToast, showModal, hideModal, escHtml, copyToClipboard } from '../core/app.js';
 import { getSupabase }       from '../core/supabase.js';
-import {
-  getProfile, getBcvRate, getWalletBs, getWalletUSD,
-  reloadProfile, reloadBcvRate, setView, subscribe, ECONOMY,
-} from '../core/state.js';
+import { getProfile, getBcvRate, reloadProfile, reloadBcvRate, setView, subscribe, ECONOMY } from '../core/state.js';
 
 registerView('dashboard', initDashboardView);
 
@@ -20,18 +10,12 @@ export async function initDashboardView($container) {
   _unsubs.forEach(fn => fn()); _unsubs = [];
   await reloadBcvRate(); await reloadProfile();
 
-  // 🛡️ REVISIÓN DEL ESCUDO
   if (window.sessionStorage.getItem('cw_skip_recon')) {
       window.sessionStorage.removeItem('cw_skip_recon');
   } else {
       const profile = getProfile();
-      if (profile) {
-        const isReconnected = await checkActiveMatch(profile);
-        if (isReconnected) return; 
-      }
+      if (profile) { const isReconnected = await checkActiveMatch(profile); if (isReconnected) return; }
   }
-
-  injectStoreStyles();
   render($container);
   _unsubs.push(subscribe('profile', () => render($container)));
   _unsubs.push(subscribe('bcvRate', () => render($container)));
@@ -41,62 +25,15 @@ async function checkActiveMatch(profile) {
   const sb = getSupabase();
   try {
     const { data: activeMatch } = await sb.from('matches').select('*').eq('status', 'playing').or(`player_pink.eq.${profile.id},player_blue.eq.${profile.id}`).limit(1).maybeSingle();
-
     if (activeMatch) {
-      const startTime = new Date(activeMatch.match_start_time).getTime();
-      const ageMinutes = (Date.now() - startTime) / 1000 / 60;
+      const startTime = new Date(activeMatch.match_start_time).getTime(); const ageMinutes = (Date.now() - startTime) / 1000 / 60;
       if (ageMinutes > 4) { await sb.from('matches').update({status: 'cancelled'}).eq('id', activeMatch.id); return false; }
-
-      const myColor = activeMatch.player_pink === profile.id ? 'pink' : 'blue';
-      const rivalId = myColor === 'pink' ? activeMatch.player_blue : activeMatch.player_pink;
-      
-      window.CW_SESSION = {
-        isBotMatch: rivalId === 'BOT', matchId: activeMatch.id, myColor: myColor,
-        rivalName: rivalId === 'BOT' ? 'BOT' : 'HUMANO',
-        board: activeMatch.board_state || Array(5).fill(null).map(() => Array(5).fill(null).map(() => ({ owner: null, mass: 0 })))
-      };
-      
+      const myColor = activeMatch.player_pink === profile.id ? 'pink' : 'blue'; const rivalId = myColor === 'pink' ? activeMatch.player_blue : activeMatch.player_pink;
+      window.CW_SESSION = { isBotMatch: rivalId === 'BOT', matchId: activeMatch.id, myColor: myColor, rivalName: rivalId === 'BOT' ? 'BOT' : 'HUMANO', board: activeMatch.board_state || Array(5).fill(null).map(() => Array(5).fill(null).map(() => ({ owner: null, mass: 0 }))) };
       showToast('Reconectando a la batalla...', 'info'); setView('game'); return true; 
     }
   } catch (err) {}
   return false; 
-}
-
-function injectStoreStyles() {
-  if (document.getElementById('cw-store-styles')) return;
-  const style = document.createElement('style'); style.id = 'cw-store-styles';
-  
-  // 🌓 CIRUGÍA: Conservamos tus estilos originales, pero al final inyectamos las reglas del Modo Claro
-  style.innerHTML = `
-    .cp-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 15px; margin-bottom: 15px; }
-    .cp-card { background: linear-gradient(145deg, #11111a, #1a1a2e); border: 1px solid var(--border-ghost); border-radius: 15px; padding: 15px 10px; text-align: center; cursor: pointer; position: relative; overflow: hidden; transition: all 0.3s; box-shadow: 0 5px 15px rgba(0,0,0,0.5); }
-    .cp-card:hover, .cp-card:active { transform: translateY(-4px) scale(1.03); border-color: var(--card-color); box-shadow: 0 0 20px var(--card-color) inset, 0 10px 20px rgba(0,0,0,0.8); }
-    .cp-crystal { font-size: 2.8rem; margin-bottom: 10px; display: inline-block; animation: float 3s ease-in-out infinite; filter: drop-shadow(0 0 12px var(--card-color)); }
-    .cp-amount { font-family: var(--font-display); font-size: 1.3rem; font-weight: 900; color: white; letter-spacing: 1px; }
-    .cp-price { font-family: var(--font-mono); font-size: 0.8rem; color: #fff; background: var(--card-color); padding: 4px 10px; border-radius: 8px; display: inline-block; margin-top: 8px; font-weight: bold; text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
-    @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
-    .cp-logo-text { background: -webkit-linear-gradient(45deg, #00f0ff, #ff00ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-    header .wallet, header .balance-usd, .top-bar-wallet { display: none !important; opacity: 0 !important; }
-    .bank-option { padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.1); color: white; font-family: var(--font-mono); font-size: 0.75rem; text-align: left; cursor: pointer; transition: background 0.2s; }
-    .bank-option:hover { background: rgba(255,0,255,0.2); } .bank-option:last-child { border-bottom: none; }
-
-    /* 🔥 INYECCIÓN MODO CLARO ÉLITE (Solo aplica al tocar el Sol) */
-    html.light .wallet-card, html.light .card, html.light .card-acc {
-      background: #ffffff !important;
-      border: 1px solid #e0e0ea !important;
-      box-shadow: 0 8px 25px rgba(0,0,0,0.05) !important;
-    }
-    html.light .dash-grid p, html.light .dash-grid span, html.light .dash-grid div {
-       text-shadow: none !important;
-    }
-    html.light .wallet-label, html.light .wallet-usd, html.light .wallet-amount, 
-    html.light .wallet-amount span, html.light .card-acc p, html.light .lb-table td, 
-    html.light .lb-table th {
-       color: #11111a !important;
-    }
-    html.light .btn-neon, html.light .btn-battle { color: #ffffff !important; }
-    html.light #btn-withdraw { border-color: #11111a !important; color: #11111a !important; }
-  `; document.head.appendChild(style);
 }
 
 function render($c) {
@@ -108,55 +45,30 @@ function render($c) {
   <div class="dash-grid">
     <div class="wallet-card card-acc" style="grid-column:1/-1; background: linear-gradient(145deg, #0f0c29, #302b63, #24243e); border: 1px solid #4c1d95;">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:.85rem;">
-        <div>
-          <p class="wallet-label" style="color:#00f0ff;">💎 Billetera Élite</p>
-          <div class="wallet-amount" style="text-shadow: 0 0 10px rgba(0,240,255,0.5);">${cpBalance.toLocaleString('es-VE')} <span style="font-size:1.1rem;color:#00f0ff;font-family:var(--font-display); font-weight:bold;">CP</span></div>
-          <p class="wallet-usd" style="color:var(--text-dim);">Color-Poins Disponibles</p>
-        </div>
-        <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;">
-          <button id="btn-recharge" class="btn btn-neon" style="font-size:.68rem; background: linear-gradient(90deg, #00f0ff, #0055ff); border:none; color:white;">🛒 COMPRAR CP</button>
-          <button id="btn-withdraw" class="btn btn-ghost" style="font-size:.68rem; border-color:#ff00ff; color:#ff00ff;">🔄 CANJEAR</button>
-        </div>
+        <div><p class="wallet-label" style="color:#00f0ff;">💎 Billetera Élite</p><div class="wallet-amount" style="text-shadow: 0 0 10px rgba(0,240,255,0.5);">${cpBalance.toLocaleString('es-VE')} <span style="font-size:1.1rem;color:#00f0ff;font-family:var(--font-display); font-weight:bold;">CP</span></div><p class="wallet-usd" style="color:var(--text-dim);">Color-Poins Disponibles</p></div>
+        <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;"><button id="btn-recharge" class="btn btn-neon" style="font-size:.68rem; background: linear-gradient(90deg, #00f0ff, #0055ff); border:none; color:white;">🛒 COMPRAR CP</button><button id="btn-withdraw" class="btn btn-ghost" style="font-size:.68rem; border-color:#ff00ff; color:#ff00ff;">🔄 CANJEAR</button></div>
       </div>
     </div>
     <div class="card" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;padding:1.75rem 1.25rem;background:linear-gradient(135deg,#2e0854,#0b0f19);border-color:#6d28d9; box-shadow: 0 0 20px rgba(109, 40, 217, 0.3);">
-      <div style="text-align:center;">
-        <p style="font-family:var(--font-display);font-size:.75rem;letter-spacing:.18em;color:var(--text-bright);text-transform:uppercase;margin-bottom:.2rem;">Costo de Entrada: <span style="color:#00f0ff; text-shadow: 0 0 5px #00f0ff;">${ENTRY_COST} CP</span></p>
-        <p style="font-family:var(--font-mono);font-size:.65rem;color:var(--pink);">Premio al Ganador: ${REWARD} CP</p>
-      </div>
+      <div style="text-align:center;"><p style="font-family:var(--font-display);font-size:.75rem;letter-spacing:.18em;color:var(--text-bright);text-transform:uppercase;margin-bottom:.2rem;">Costo de Entrada: <span style="color:#00f0ff; text-shadow: 0 0 5px #00f0ff;">${ENTRY_COST} CP</span></p><p style="font-family:var(--font-mono);font-size:.65rem;color:var(--pink);">Premio al Ganador: ${REWARD} CP</p></div>
       <button id="btn-battle" class="btn btn-battle" style="background:#ff00ff; box-shadow: 0 0 15px #ff00ff;" ${cpBalance < ENTRY_COST ? 'disabled' : ''}>⚔ ENTRAR A LA ARENA</button>
       ${cpBalance < ENTRY_COST ? `<p style="font-family:var(--font-mono);font-size:.62rem;color:#ff4444;text-align:center;">Insuficientes CP. Ve a la tienda.</p>` : ''}
     </div>
     <div class="card card-acc">
       <p style="font-family:var(--font-mono);font-size:.62rem;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim);margin-bottom:.9rem;">📊 Récord de Batalla</p>
-      <div class="donut-wrap">
-        ${buildDonut(winPct)}
-        <div style="display:flex;flex-direction:column;gap:.45rem;width:100%;">
-          ${statRow('Victorias', wins, 'var(--pink)', 'var(--pink-dim)')}
-          ${statRow('Derrotas',  losses, 'var(--blue)', 'var(--blue-dim)')}
-          ${total > 0 ? `<div style="padding-top:.4rem;border-top:1px solid var(--border-ghost);display:flex;justify-content:space-between;"><span style="font-family:var(--font-mono);font-size:.62rem;color:var(--text-dim);">Win Rate</span><span style="font-family:var(--font-display);font-size:.85rem;font-weight:700;color:${winPct>=50?'var(--pink)':'var(--blue)'};">${winPct}%</span></div>` : ''}
-        </div>
-      </div>
+      <div class="donut-wrap">${buildDonut(winPct)}<div style="display:flex;flex-direction:column;gap:.45rem;width:100%;">${statRow('Victorias', wins, 'var(--pink)', 'var(--pink-dim)')}${statRow('Derrotas',  losses, 'var(--blue)', 'var(--blue-dim)')}${total > 0 ? `<div style="padding-top:.4rem;border-top:1px solid var(--border-ghost);display:flex;justify-content:space-between;"><span style="font-family:var(--font-mono);font-size:.62rem;color:var(--text-dim);">Win Rate</span><span style="font-family:var(--font-display);font-size:.85rem;font-weight:700;color:${winPct>=50?'var(--pink)':'var(--blue)'};">${winPct}%</span></div>` : ''}</div></div>
     </div>
-    <div class="card card-acc" id="lb-card">
-      <p style="font-family:var(--font-mono);font-size:.62rem;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim);margin-bottom:.9rem;">🏆 Top Leyendas</p>
-      <div id="lb-body" style="font-family:var(--font-mono);font-size:.7rem;color:var(--text-dim);">Cargando…</div>
-    </div>
+    <div class="card card-acc" id="lb-card"><p style="font-family:var(--font-mono);font-size:.62rem;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim);margin-bottom:.9rem;">🏆 Top Leyendas</p><div id="lb-body" style="font-family:var(--font-mono);font-size:.7rem;color:var(--text-dim);">Cargando…</div></div>
   </div>`;
   attachEvents($c); loadLeaderboard($c);
 }
 
-function statRow(label, val, color, glow) {
-  return `<div style="display:flex;align-items:center;justify-content:space-between;"><div style="display:flex;align-items:center;gap:.4rem;"><span style="width:9px;height:9px;border-radius:50%;background:${color};box-shadow:0 0 5px ${glow};display:inline-block;"></span><span style="font-family:var(--font-mono);font-size:.68rem;color:var(--text-base);">${label}</span></div><span style="font-family:var(--font-display);font-size:.82rem;font-weight:700;color:${color};">${val}</span></div>`;
-}
+function statRow(label, val, color, glow) { return `<div style="display:flex;align-items:center;justify-content:space-between;"><div style="display:flex;align-items:center;gap:.4rem;"><span style="width:9px;height:9px;border-radius:50%;background:${color};box-shadow:0 0 5px ${glow};display:inline-block;"></span><span style="font-family:var(--font-mono);font-size:.68rem;color:var(--text-base);">${label}</span></div><span style="font-family:var(--font-display);font-size:.82rem;font-weight:700;color:${color};">${val}</span></div>`; }
 
 function attachEvents($c) {
   $c.querySelector('#btn-recharge')?.addEventListener('click', openStoreModal);
   $c.querySelector('#btn-withdraw')?.addEventListener('click', openWithdrawModal);
-  $c.querySelector('#btn-battle')?.addEventListener('click',   () => {
-    if (Number(getProfile().wallet_bs) < 30) { showToast(`Necesitas 30 CP para jugar.`, 'warning'); return; }
-    setView('matchmaking');
-  });
+  $c.querySelector('#btn-battle')?.addEventListener('click',   () => { if (Number(getProfile().wallet_bs) < 30) { showToast(`Necesitas 30 CP para jugar.`, 'warning'); return; } setView('matchmaking'); });
 }
 
 async function loadLeaderboard($c) {
@@ -177,7 +89,7 @@ function openStoreModal() {
     <div id="store-step-1"><div class="cp-grid">${packs.map(p => `<div class="cp-card pack-btn" data-cp="${p.cp}" data-usd="${p.usd}" style="--card-color: ${p.color};"><div class="cp-crystal">${p.icon}</div><div style="font-family:var(--font-mono); font-size:0.55rem; color:var(--text-ghost); text-transform:uppercase;">${p.name}</div><div class="cp-amount">${p.cp} CP</div><div class="cp-price">USD $${p.usd.toFixed(2)}</div></div>`).join('')}</div></div>
     <div id="store-step-2" style="display:none;">
       <div style="background:rgba(0,240,255,0.1); border:1px solid #00f0ff; border-radius:10px; padding:15px; text-align:center; margin-bottom:15px;"><p style="font-family:var(--font-display); color:white; margin-bottom:5px;">Paquete Seleccionado: <span id="sel-cp" style="color:#00f0ff; font-size:1.2rem;">0 CP</span></p><p style="font-family:var(--font-mono); font-size:0.75rem; color:var(--text-dim);">Debes transferir exactamente:</p><div style="font-family:var(--font-display); color:#ffaa00; font-size:1.5rem; margin-top:5px; line-height: 1.2;" id="sel-bs">0.00 Bs</div></div>
-      <div class="bank-box" style="margin-bottom:15px;"><div class="bank-row"><span class="bank-key">Teléfono</span><div style="display:flex;align-items:center;gap:.4rem;"><span class="bank-val">04144708220</span><button class="btn-copy" onclick="window.__CW_copyToClipboard('04144708220',this)">Copiar</button></div></div><div class="bank-row"><span class="bank-key">Banco</span><div style="display:flex;align-items:center;gap:.4rem;"><span class="bank-val">Banco de Venezuela</span><button class="btn-copy" onclick="window.__CW_copyToClipboard('Banco de Venezuela',this)"></button></div></div><div class="bank-row"><span class="bank-key">C.I.</span><div style="display:flex;align-items:center;gap:.4rem;"><span class="bank-val">30522091</span><button class="btn-copy" onclick="window.__CW_copyToClipboard('30522091',this)">Copiar</button></div></div></div>
+      <div class="bank-box" style="margin-bottom:15px;"><div class="bank-row"><span class="bank-key">Teléfono</span><div style="display:flex;align-items:center;gap:.4rem;"><span class="bank-val">04144708220</span><button class="btn-copy" onclick="window.__CW_copyToClipboard('04144708220',this)">Copiar</button></div></div><div class="bank-row"><span class="bank-key">Banco</span><div style="display:flex;align-items:center;gap:.4rem;"><span class="bank-val">Banco de Venezuela</span><button class="btn-copy" onclick="window.__CW_copyToClipboard('Banco de Venezuela',this)">Copiar</button></div></div><div class="bank-row"><span class="bank-key">C.I.</span><div style="display:flex;align-items:center;gap:.4rem;"><span class="bank-val">30522091</span><button class="btn-copy" onclick="window.__CW_copyToClipboard('30522091',this)">Copiar</button></div></div></div>
       <div class="field-group" style="margin-top:.85rem;"><label class="field-label" for="rc-ref">Últimos 6 dígitos de la referencia</label><input id="rc-ref" type="text" class="input-field" placeholder="123456" maxlength="6" inputmode="numeric" /></div>
       <div class="field-group"><label class="input-file-label" id="rc-file-label" for="rc-file" style="border-color:#00f0ff; color:#00f0ff;">📎 Subir captura del Pago Móvil</label><input id="rc-file" type="file" accept="image/*" style="display:none;" /></div>
       <div id="rc-global-err" class="field-error" style="margin-bottom:.7rem;"></div>
