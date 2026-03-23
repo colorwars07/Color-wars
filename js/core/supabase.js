@@ -27,9 +27,15 @@ export function initSupabase() {
       autoRefreshToken:  true,
       detectSessionInUrl: true,
     },
+    // 🛡️ CIRUGÍA: Configuración explícita de WebSockets (Realtime) para alta concurrencia
+    realtime: {
+      params: {
+        eventsPerSecond: 10,
+      }
+    }
   });
 
-  console.log('[Supabase] Cliente inicializado con éxito');
+  console.log('[Supabase] Cliente inicializado con éxito (Realtime Activado)');
   return _client;
 }
 
