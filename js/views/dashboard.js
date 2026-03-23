@@ -1,6 +1,6 @@
 import { registerView, showToast, showModal, hideModal, escHtml, copyToClipboard } from '../core/app.js';
 import { getSupabase }       from '../core/supabase.js';
-import { getProfile, getBcvRate, reloadProfile, reloadBcvRate, setView, subscribe, ECONOMY } from '../core/state.js';
+import { getProfile, getBcvRate, reloadProfile, reloadBcvRate, setView, subscribe } from '../core/state.js';
 
 registerView('dashboard', initDashboardView);
 
@@ -10,12 +10,17 @@ export async function initDashboardView($container) {
   _unsubs.forEach(fn => fn()); _unsubs = [];
   await reloadBcvRate(); await reloadProfile();
 
+  // 🛡️ LÓGICA DE ESCUDO INTACTA
   if (window.sessionStorage.getItem('cw_skip_recon')) {
       window.sessionStorage.removeItem('cw_skip_recon');
   } else {
       const profile = getProfile();
-      if (profile) { const isReconnected = await checkActiveMatch(profile); if (isReconnected) return; }
+      if (profile) {
+        const isReconnected = await checkActiveMatch(profile);
+        if (isReconnected) return; 
+      }
   }
+
   render($container);
   _unsubs.push(subscribe('profile', () => render($container)));
   _unsubs.push(subscribe('bcvRate', () => render($container)));
@@ -26,9 +31,11 @@ async function checkActiveMatch(profile) {
   try {
     const { data: activeMatch } = await sb.from('matches').select('*').eq('status', 'playing').or(`player_pink.eq.${profile.id},player_blue.eq.${profile.id}`).limit(1).maybeSingle();
     if (activeMatch) {
-      const startTime = new Date(activeMatch.match_start_time).getTime(); const ageMinutes = (Date.now() - startTime) / 1000 / 60;
+      const startTime = new Date(activeMatch.match_start_time).getTime();
+      const ageMinutes = (Date.now() - startTime) / 1000 / 60;
       if (ageMinutes > 4) { await sb.from('matches').update({status: 'cancelled'}).eq('id', activeMatch.id); return false; }
-      const myColor = activeMatch.player_pink === profile.id ? 'pink' : 'blue'; const rivalId = myColor === 'pink' ? activeMatch.player_blue : activeMatch.player_pink;
+      const myColor = activeMatch.player_pink === profile.id ? 'pink' : 'blue';
+      const rivalId = myColor === 'pink' ? activeMatch.player_blue : activeMatch.player_pink;
       window.CW_SESSION = { isBotMatch: rivalId === 'BOT', matchId: activeMatch.id, myColor: myColor, rivalName: rivalId === 'BOT' ? 'BOT' : 'HUMANO', board: activeMatch.board_state || Array(5).fill(null).map(() => Array(5).fill(null).map(() => ({ owner: null, mass: 0 }))) };
       showToast('Reconectando a la batalla...', 'info'); setView('game'); return true; 
     }
@@ -41,24 +48,45 @@ function render($c) {
   const cpBalance = Number(profile.wallet_bs || 0); const rate = getBcvRate(); const wins = profile.wins ?? 0; const losses = profile.losses ?? 0; const total = wins + losses; const winPct = total > 0 ? Math.round(wins / total * 100) : 0;
   const ENTRY_COST = 30; const REWARD = 50;
 
+  // 🎨 ESTÉTICA ORIGINAL INTACTA (Botones fucsias y tarjetas oscuras)
   $c.innerHTML = `
   <div class="dash-grid">
     <div class="wallet-card card-acc" style="grid-column:1/-1; background: linear-gradient(145deg, #0f0c29, #302b63, #24243e); border: 1px solid #4c1d95;">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:.85rem;">
-        <div><p class="wallet-label" style="color:#00f0ff;">💎 Billetera Élite</p><div class="wallet-amount" style="text-shadow: 0 0 10px rgba(0,240,255,0.5);">${cpBalance.toLocaleString('es-VE')} <span style="font-size:1.1rem;color:#00f0ff;font-family:var(--font-display); font-weight:bold;">CP</span></div><p class="wallet-usd" style="color:var(--text-dim);">Color-Poins Disponibles</p></div>
-        <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;"><button id="btn-recharge" class="btn btn-neon" style="font-size:.68rem; background: linear-gradient(90deg, #00f0ff, #0055ff); border:none; color:white;">🛒 COMPRAR CP</button><button id="btn-withdraw" class="btn btn-ghost" style="font-size:.68rem; border-color:#ff00ff; color:#ff00ff;">🔄 CANJEAR</button></div>
+        <div>
+          <p class="wallet-label" style="color:#00f0ff;">💎 Billetera Élite</p>
+          <div class="wallet-amount" style="text-shadow: 0 0 10px rgba(0,240,255,0.5);">${cpBalance.toLocaleString('es-VE')} <span style="font-size:1.1rem;color:#00f0ff;font-family:var(--font-display); font-weight:bold;">CP</span></div>
+          <p class="wallet-usd" style="color:var(--text-dim);">Color-Poins Disponibles</p>
+        </div>
+        <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;">
+          <button id="btn-recharge" class="btn btn-neon" style="font-size:.68rem; background: linear-gradient(90deg, #00f0ff, #0055ff); border:none; color:white;">🛒 COMPRAR CP</button>
+          <button id="btn-withdraw" class="btn btn-ghost" style="font-size:.68rem; border-color:#ff00ff; color:#ff00ff;">🔄 CANJEAR</button>
+        </div>
       </div>
     </div>
     <div class="card" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;padding:1.75rem 1.25rem;background:linear-gradient(135deg,#2e0854,#0b0f19);border-color:#6d28d9; box-shadow: 0 0 20px rgba(109, 40, 217, 0.3);">
-      <div style="text-align:center;"><p style="font-family:var(--font-display);font-size:.75rem;letter-spacing:.18em;color:var(--text-bright);text-transform:uppercase;margin-bottom:.2rem;">Costo de Entrada: <span style="color:#00f0ff; text-shadow: 0 0 5px #00f0ff;">${ENTRY_COST} CP</span></p><p style="font-family:var(--font-mono);font-size:.65rem;color:var(--pink);">Premio al Ganador: ${REWARD} CP</p></div>
+      <div style="text-align:center;">
+        <p style="font-family:var(--font-display);font-size:.75rem;letter-spacing:.18em;color:var(--text-bright);text-transform:uppercase;margin-bottom:.2rem;">Costo de Entrada: <span style="color:#00f0ff; text-shadow: 0 0 5px #00f0ff;">${ENTRY_COST} CP</span></p>
+        <p style="font-family:var(--font-mono);font-size:.65rem;color:var(--pink);">Premio al Ganador: ${REWARD} CP</p>
+      </div>
       <button id="btn-battle" class="btn btn-battle" style="background:#ff00ff; box-shadow: 0 0 15px #ff00ff;" ${cpBalance < ENTRY_COST ? 'disabled' : ''}>⚔ ENTRAR A LA ARENA</button>
       ${cpBalance < ENTRY_COST ? `<p style="font-family:var(--font-mono);font-size:.62rem;color:#ff4444;text-align:center;">Insuficientes CP. Ve a la tienda.</p>` : ''}
     </div>
     <div class="card card-acc">
       <p style="font-family:var(--font-mono);font-size:.62rem;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim);margin-bottom:.9rem;">📊 Récord de Batalla</p>
-      <div class="donut-wrap">${buildDonut(winPct)}<div style="display:flex;flex-direction:column;gap:.45rem;width:100%;">${statRow('Victorias', wins, 'var(--pink)', 'var(--pink-dim)')}${statRow('Derrotas',  losses, 'var(--blue)', 'var(--blue-dim)')}${total > 0 ? `<div style="padding-top:.4rem;border-top:1px solid var(--border-ghost);display:flex;justify-content:space-between;"><span style="font-family:var(--font-mono);font-size:.62rem;color:var(--text-dim);">Win Rate</span><span style="font-family:var(--font-display);font-size:.85rem;font-weight:700;color:${winPct>=50?'var(--pink)':'var(--blue)'};">${winPct}%</span></div>` : ''}</div></div>
+      <div class="donut-wrap">
+        ${buildDonut(winPct)}
+        <div style="display:flex;flex-direction:column;gap:.45rem;width:100%;">
+          ${statRow('Victorias', wins, 'var(--pink)', 'var(--pink-dim)')}
+          ${statRow('Derrotas',  losses, 'var(--blue)', 'var(--blue-dim)')}
+          ${total > 0 ? `<div style="padding-top:.4rem;border-top:1px solid var(--border-ghost);display:flex;justify-content:space-between;"><span style="font-family:var(--font-mono);font-size:.62rem;color:var(--text-dim);">Win Rate</span><span style="font-family:var(--font-display);font-size:.85rem;font-weight:700;color:${winPct>=50?'var(--pink)':'var(--blue)'};">${winPct}%</span></div>` : ''}
+        </div>
+      </div>
     </div>
-    <div class="card card-acc" id="lb-card"><p style="font-family:var(--font-mono);font-size:.62rem;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim);margin-bottom:.9rem;">🏆 Top Leyendas</p><div id="lb-body" style="font-family:var(--font-mono);font-size:.7rem;color:var(--text-dim);">Cargando…</div></div>
+    <div class="card card-acc" id="lb-card">
+      <p style="font-family:var(--font-mono);font-size:.62rem;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim);margin-bottom:.9rem;">🏆 Top Leyendas</p>
+      <div id="lb-body" style="font-family:var(--font-mono);font-size:.7rem;color:var(--text-dim);">Cargando…</div>
+    </div>
   </div>`;
   attachEvents($c); loadLeaderboard($c);
 }
@@ -83,15 +111,22 @@ function openStoreModal() {
   const rate = getBcvRate();
   const packs = [{ cp: 50, usd: 0.50, color: '#00f0ff', name: 'CRISTAL BÁSICO', icon: '🔹' }, { cp: 100, usd: 1.00, color: '#00ff66', name: 'NÚCLEO VERDE', icon: '🔋' }, { cp: 300, usd: 3.00, color: '#ff00ff', name: 'PILA PÚRPURA', icon: '🔮' }, { cp: 500, usd: 5.00, color: '#ffaa00', name: 'COFRE NARANJA', icon: '🧰' }, { cp: 1000, usd: 10.00, color: '#ff0055', name: 'MATRIZ ROJA', icon: '💎' }, { cp: 1500, usd: 15.00, color: '#ffff00', name: 'TESORO LEYENDA', icon: '👑' }];
   showModal(`
+    <style>
+    .cp-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 15px; margin-bottom: 15px; }
+    .cp-card { background: linear-gradient(145deg, #11111a, #1a1a2e); border: 1px solid var(--border-ghost); border-radius: 15px; padding: 15px 10px; text-align: center; cursor: pointer; position: relative; overflow: hidden; transition: all 0.3s; box-shadow: 0 5px 15px rgba(0,0,0,0.5); }
+    .cp-card:hover, .cp-card:active { transform: translateY(-4px) scale(1.03); border-color: var(--card-color); box-shadow: 0 0 20px var(--card-color) inset, 0 10px 20px rgba(0,0,0,0.8); }
+    .cp-crystal { font-size: 2.8rem; margin-bottom: 10px; display: inline-block; filter: drop-shadow(0 0 12px var(--card-color)); }
+    .cp-amount { font-family: var(--font-display); font-size: 1.3rem; font-weight: 900; color: white; letter-spacing: 1px; }
+    .cp-price { font-family: var(--font-mono); font-size: 0.8rem; color: #fff; background: var(--card-color); padding: 4px 10px; border-radius: 8px; display: inline-block; margin-top: 8px; font-weight: bold; }
+    </style>
     <button class="modal-close" onclick="window.__CW_hideModal()">✕</button>
-    <div class="modal-title" style="text-align:center; margin-bottom: 5px;"><span class="cp-logo-text" style="font-size:1.5rem; font-weight:900; letter-spacing:2px;">TIENDA DE COLOR-POINS</span></div>
-    <p style="text-align:center; font-family:var(--font-mono); font-size:0.65rem; color:var(--text-dim); margin-bottom:15px;">Adquiere CP para entrar a la arena</p>
+    <div class="modal-title" style="text-align:center; margin-bottom: 5px;"><span style="color:#ff00ff; font-size:1.5rem; font-weight:900;">TIENDA CP</span></div>
     <div id="store-step-1"><div class="cp-grid">${packs.map(p => `<div class="cp-card pack-btn" data-cp="${p.cp}" data-usd="${p.usd}" style="--card-color: ${p.color};"><div class="cp-crystal">${p.icon}</div><div style="font-family:var(--font-mono); font-size:0.55rem; color:var(--text-ghost); text-transform:uppercase;">${p.name}</div><div class="cp-amount">${p.cp} CP</div><div class="cp-price">USD $${p.usd.toFixed(2)}</div></div>`).join('')}</div></div>
     <div id="store-step-2" style="display:none;">
-      <div style="background:rgba(0,240,255,0.1); border:1px solid #00f0ff; border-radius:10px; padding:15px; text-align:center; margin-bottom:15px;"><p style="font-family:var(--font-display); color:white; margin-bottom:5px;">Paquete Seleccionado: <span id="sel-cp" style="color:#00f0ff; font-size:1.2rem;">0 CP</span></p><p style="font-family:var(--font-mono); font-size:0.75rem; color:var(--text-dim);">Debes transferir exactamente:</p><div style="font-family:var(--font-display); color:#ffaa00; font-size:1.5rem; margin-top:5px; line-height: 1.2;" id="sel-bs">0.00 Bs</div></div>
-      <div class="bank-box" style="margin-bottom:15px;"><div class="bank-row"><span class="bank-key">Teléfono</span><div style="display:flex;align-items:center;gap:.4rem;"><span class="bank-val">04144708220</span><button class="btn-copy" onclick="window.__CW_copyToClipboard('04144708220',this)">Copiar</button></div></div><div class="bank-row"><span class="bank-key">Banco</span><div style="display:flex;align-items:center;gap:.4rem;"><span class="bank-val">Banco de Venezuela</span><button class="btn-copy" onclick="window.__CW_copyToClipboard('Banco de Venezuela',this)">Copiar</button></div></div><div class="bank-row"><span class="bank-key">C.I.</span><div style="display:flex;align-items:center;gap:.4rem;"><span class="bank-val">30522091</span><button class="btn-copy" onclick="window.__CW_copyToClipboard('30522091',this)">Copiar</button></div></div></div>
+      <div style="background:rgba(0,240,255,0.1); border:1px solid #00f0ff; border-radius:10px; padding:15px; text-align:center; margin-bottom:15px;"><p style="font-family:var(--font-display); color:white; margin-bottom:5px;">Paquete Seleccionado: <span id="sel-cp" style="color:#00f0ff; font-size:1.2rem;">0 CP</span></p><p style="font-family:var(--font-mono); font-size:0.75rem; color:var(--text-dim);">Debes transferir exactamente:</p><div style="font-family:var(--font-display); color:#ffaa00; font-size:1.5rem; margin-top:5px;" id="sel-bs">0.00 Bs</div></div>
+      <div class="bank-box" style="margin-bottom:15px;"><div class="bank-row"><span class="bank-key">Teléfono</span><div style="display:flex;align-items:center;gap:.4rem;"><span class="bank-val">04144708220</span></div></div><div class="bank-row"><span class="bank-key">Banco</span><div style="display:flex;align-items:center;gap:.4rem;"><span class="bank-val">Banco de Venezuela</span></div></div><div class="bank-row"><span class="bank-key">C.I.</span><div style="display:flex;align-items:center;gap:.4rem;"><span class="bank-val">30522091</span></div></div></div>
       <div class="field-group" style="margin-top:.85rem;"><label class="field-label" for="rc-ref">Últimos 6 dígitos de la referencia</label><input id="rc-ref" type="text" class="input-field" placeholder="123456" maxlength="6" inputmode="numeric" /></div>
-      <div class="field-group"><label class="input-file-label" id="rc-file-label" for="rc-file" style="border-color:#00f0ff; color:#00f0ff;">📎 Subir captura del Pago Móvil</label><input id="rc-file" type="file" accept="image/*" style="display:none;" /></div>
+      <div class="field-group"><label class="input-file-label" id="rc-file-label" for="rc-file" style="border-color:#00f0ff; color:#00f0ff;">📎 Subir captura de Pago</label><input id="rc-file" type="file" accept="image/*" style="display:none;" /></div>
       <div id="rc-global-err" class="field-error" style="margin-bottom:.7rem;"></div>
       <div style="display:flex; gap:10px;"><button id="btn-back-store" class="btn btn-ghost" style="flex:1;">ATRÁS</button><button id="btn-rc-submit" class="btn btn-primary" style="flex:2; background: linear-gradient(90deg, #00f0ff, #0055ff); border:none;">COMPRAR CP</button></div>
     </div>
@@ -101,7 +136,7 @@ function openStoreModal() {
   document.querySelectorAll('.pack-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       selectedCP = parseInt(btn.getAttribute('data-cp')); selectedUSD = parseFloat(btn.getAttribute('data-usd'));
-      document.getElementById('sel-cp').textContent = `${selectedCP} CP`; document.getElementById('sel-bs').innerHTML = `${parseFloat((selectedUSD * rate).toFixed(2)).toLocaleString('es-VE')} Bs<br><span style="font-size:0.7rem; color:#fff; font-family:var(--font-mono); font-weight:normal;">(${selectedUSD.toFixed(2)} USD x ${rate} Bs/$)</span>`;
+      document.getElementById('sel-cp').textContent = `${selectedCP} CP`; document.getElementById('sel-bs').innerHTML = `${parseFloat((selectedUSD * rate).toFixed(2)).toLocaleString('es-VE')} Bs`;
       document.getElementById('store-step-1').style.display = 'none'; document.getElementById('store-step-2').style.display = 'block';
     });
   });
@@ -136,16 +171,17 @@ function openWithdrawModal() {
   const BANKS = ["0102 - BANCO DE VENEZUELA", "0156 - 100% BANCO", "0172 - BANCAMIGA BANCO UNIVERSAL", "0114 - BANCARIBE", "0171 - BANCO ACTIVO", "0128 - BANCO CARONÍ", "0163 - BANCO DEL TESORO", "0175 - BANCO DIGITAL DE LOS TRABAJADORES", "0115 - BANCO EXTERIOR", "0151 - BANCO FONDO COMÚN", "0105 - BANCO MERCANTIL", "0191 - BANCO NACIONAL DE CREDITO", "0138 - BANCO PLAZA", "0137 - BANCO SOFITASA", "0104 - BANCO VENEZOLANO DE CREDITO", "0168 - BANCRECER", "0134 - BANESCO", "0177 - BANFANB", "0146 - BANGENTE", "0174 - BANPLUS", "0108 - BBVA PROVINCIAL", "0157 - DELSUR BANCO UNIVERSAL"];
 
   showModal(`
+    <style>.bank-option { padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.1); color: white; cursor: pointer; } .bank-option:hover { background: rgba(255,0,255,0.2); }</style>
     <button class="modal-close" onclick="window.__CW_hideModal()">✕</button>
     <div class="modal-title" style="color:#ff00ff;">CANJEAR COLOR-POINS</div>
     <p style="font-family:var(--font-mono);font-size:.65rem;color:var(--text-dim);margin-bottom:1rem;line-height:1.6; text-align:center;">CP Disponibles: <strong style="color:#00f0ff; font-size:1.1rem;">${cpBalance.toLocaleString('es-VE')} CP</strong></p>
-    <div class="field-group"><label class="field-label" for="wd-amount">Cantidad a canjear</label><input id="wd-amount" type="number" min="200" step="1" class="input-field" placeholder="Mínimo: 200 CP" style="border-color:#ff00ff;" /><p style="font-family:var(--font-mono); font-size:0.55rem; color:#ff4444; margin-top:5px;">* El retiro mínimo es de 200 CP</p></div>
+    <div class="field-group"><label class="field-label" for="wd-amount">Cantidad a canjear</label><input id="wd-amount" type="number" min="200" step="1" class="input-field" placeholder="Mínimo: 200 CP" style="border-color:#ff00ff;" /></div>
     <div id="wd-calc" style="background:rgba(255,0,255,0.1); border:1px solid #ff00ff; border-radius:10px; padding:10px; text-align:center; margin-bottom:15px; display:none;"><p style="font-family:var(--font-mono); font-size:0.7rem; color:var(--text-dim);">Recibirás en tu cuenta:</p><div style="font-family:var(--font-display); color:#00f0ff; font-size:1.3rem; margin-top:5px;" id="wd-bs-result">0.00 Bs</div></div>
-    <div class="field-group custom-select-wrapper" style="position:relative;"><label class="field-label" for="wd-bank">Banco Destino</label><input type="text" id="wd-bank" class="input-field" placeholder="Escribe o selecciona un banco..." autocomplete="off" /><span style="position:absolute; right:15px; top:35px; color:var(--text-dim); pointer-events:none;">▼</span><div id="bank-dropdown" style="display:none; position:absolute; top:100%; left:0; right:0; background:#11111a; border:1px solid #ff00ff; z-index:100; max-height:200px; overflow-y:auto; border-radius:8px; margin-top:5px; box-shadow:0 10px 25px rgba(0,0,0,0.9);"></div></div>
+    <div class="field-group custom-select-wrapper" style="position:relative;"><label class="field-label" for="wd-bank">Banco Destino</label><input type="text" id="wd-bank" class="input-field" placeholder="Escribe o selecciona un banco..." autocomplete="off" /><div id="bank-dropdown" style="display:none; position:absolute; top:100%; left:0; right:0; background:#11111a; border:1px solid #ff00ff; z-index:100; max-height:200px; overflow-y:auto; border-radius:8px;"></div></div>
     <div class="field-group"><label class="field-label" for="wd-phone">Teléfono</label><input id="wd-phone" type="tel" class="input-field" placeholder="04XX-XXXXXXX" /></div>
     <div class="field-group"><label class="field-label" for="wd-ci">Cédula</label><input id="wd-ci" type="text" class="input-field" placeholder="V-XXXXXXXX" /></div>
     <div id="wd-err" class="field-error" style="margin-bottom:.7rem;"></div>
-    <button id="btn-wd-submit" class="btn btn-primary" style="width:100%;height:46px;font-size:.75rem;letter-spacing:.12em; background:#ff00ff; border:none; box-shadow:0 0 10px rgba(255,0,255,0.5);">SOLICITAR CANJE</button>`, { closable: true });
+    <button id="btn-wd-submit" class="btn btn-primary" style="width:100%;height:46px;font-size:.75rem;letter-spacing:.12em; background:#ff00ff; border:none;">SOLICITAR CANJE</button>`, { closable: true });
 
   const $amount = document.getElementById('wd-amount'); const $calc = document.getElementById('wd-calc'); const $bsRes = document.getElementById('wd-bs-result');
   $amount?.addEventListener('input', () => { const cp = parseFloat($amount.value); if (!isNaN(cp) && cp > 0) { $bsRes.textContent = parseFloat(((cp/100) * rate).toFixed(2)).toLocaleString('es-VE') + ' Bs'; $calc.style.display = 'block'; } else { $calc.style.display = 'none'; } });
