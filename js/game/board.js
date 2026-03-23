@@ -5,12 +5,14 @@ import { getSupabase } from '../core/supabase.js';
 const BOARD_SIZE = 5; let _active = false; let _currentTurn = 'pink'; let _isAnimating = false; let _turnCount = 0; let _missedTurns = 0; let _$container = null; let _masterClockTimer = null; let _matchChannel = null; let _dbStartTime = null; let _dbLastMoveTime = null; let _lastDBUpdateTime = null; let _botIsMoving = false;
 let _lockPollingUntil = 0; let _opponentMissedTurns = 0; let _processingStrike = false;
 
-// 🔊 CONFIGURACIÓN DE SONIDOS (Limpios)
+// 🛡️ CIRUGÍA: ACTION QUEUE (Cola de Animaciones)
+let _actionQueue = []; let _isProcessingQueue = false;
+
 const sfx = {
   click: new Howl({ src: ['https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3'], volume: 0.5 }), 
   pop:   new Howl({ src: ['https://assets.mixkit.co/active_storage/sfx/2578/2578-preview.mp3'], volume: 0.7 }), 
   boom:  new Howl({ src: ['https://assets.mixkit.co/active_storage/sfx/2578/2578-preview.mp3'], volume: 1.0 }), 
-  win:   new Howl({ src: ['https://assets.mixkit.co/active_storage/sfx/544/544-preview.mp3'], volume: 1.0 }),  // 🔥 VICTORIA AL MÁXIMO
+  win:   new Howl({ src: ['https://assets.mixkit.co/active_storage/sfx/544/544-preview.mp3'], volume: 1.0 }), 
   lose:  new Howl({ src: ['https://assets.mixkit.co/active_storage/sfx/3012/3012-preview.mp3'], volume: 0.8 }) 
 };
 
@@ -21,6 +23,7 @@ export async function initGameView($container) {
   if (!window.CW_SESSION || !window.CW_SESSION.board) { window.CW_SESSION = null; setView('dashboard'); return; }
   _active = true; _isAnimating = false; _turnCount = 0; _missedTurns = 0; _botIsMoving = false; _lastDBUpdateTime = Date.now();
   _lockPollingUntil = 0; _opponentMissedTurns = 0; _processingStrike = false;
+  _actionQueue = []; _isProcessingQueue = false; // Reset Queue
   const sb = getSupabase();
 
   if (window.CW_SESSION.matchId) {
@@ -32,7 +35,6 @@ export async function initGameView($container) {
       }
     } catch(e) {}
     
-    // 🛡️ CIRUGÍA: Iniciamos la conexión Realtime en vez de Polling
     if (!window.CW_SESSION.isBotMatch) _startRealtimeSubscription();
   }
   renderHTML(); updateDOM(); _startMasterClock();
@@ -42,20 +44,35 @@ function _startRealtimeSubscription() {
   const sb = getSupabase();
   if (_matchChannel) { sb.removeChannel(_matchChannel); _matchChannel = null; }
   
-  // 🔥 LÓGICA: Supabase Realtime (WebSockets) elimina las 66 peticiones por segundo
   _matchChannel = sb.channel(`match_${window.CW_SESSION.matchId}`)
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches', filter: `id=eq.${window.CW_SESSION.matchId}` }, (payload) => {
-      if (!_active || _isAnimating) return; 
-      const data = payload.new;
+      if (!_active) return; 
+      
+      // 🛡️ En vez de aplicar el movimiento de golpe, lo metemos a la cola
+      _actionQueue.push(payload.new);
+      _processQueue();
+    }).subscribe();
+}
+
+// 🛡️ El Procesador de la Cola (Espera a que terminen las explosiones)
+async function _processQueue() {
+  if (_isProcessingQueue || _actionQueue.length === 0 || !_active) return;
+  _isProcessingQueue = true;
+
+  while (_actionQueue.length > 0) {
+      if (_isAnimating) { await new Promise(r => setTimeout(r, 200)); continue; } // Pausa si hay explosiones
+
+      const data = _actionQueue.shift();
       _lastDBUpdateTime = Date.now(); 
-      if (data.status === 'finished' && data.winner) { _finishGame(data.winner, true); return; }
+      if (data.status === 'finished' && data.winner) { _finishGame(data.winner, true); break; }
       
       if (Date.now() > _lockPollingUntil) {
           if (data.current_turn === window.CW_SESSION.myColor && _currentTurn !== window.CW_SESSION.myColor) {
              window.CW_SESSION.board = data.board_state; _currentTurn = data.current_turn; _dbLastMoveTime = new Date(data.last_move_time).getTime(); _missedTurns = 0; _opponentMissedTurns = 0; updateDOM();
           }
       }
-    }).subscribe();
+  }
+  _isProcessingQueue = false;
 }
 
 function renderHTML() {
@@ -63,7 +80,6 @@ function renderHTML() {
   const youColorVar = myColor === 'pink' ? 'var(--pink)' : '#a855f7'; 
   const rivalColorVar = myColor === 'pink' ? '#a855f7' : 'var(--pink)';
   
-  // 🎨 ESTÉTICA ORIGINAL INTACTA
   _$container.innerHTML = `
   <div class="game-arena">
     <div style="background: rgba(10, 10, 15, 0.9); border: 1px solid var(--border-ghost); border-radius: 14px; padding: 12px; margin-bottom: 20px; width: 95%; max-width: 380px; display: flex; flex-direction: column; gap: 8px;">
@@ -161,7 +177,7 @@ function handlePlayerClick(row, col) {
 
 async function _addMass(row, col, color) {
   if (_isAnimating) return; _isAnimating = true;
-  try { await _processMass(row, col, color); if (_active && !_checkGameOver()) _passTurn(); } catch(e) {} finally { _isAnimating = false; _botIsMoving = false; }
+  try { await _processMass(row, col, color); if (_active && !_checkGameOver()) _passTurn(); } catch(e) {} finally { _isAnimating = false; _botIsMoving = false; _processQueue(); }
 }
 
 async function _processMass(row, col, color) {
