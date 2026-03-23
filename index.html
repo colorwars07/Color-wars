@@ -25,227 +25,65 @@
     window.tailwind = window.tailwind || {};
     window.__TW_CONFIG__ = {
       darkMode: 'class',
-      theme: {
-        extend: {
-          colors: {
-            'void':        '#0a0a0f',
-            'surface-1':   '#1a1a2e',
-            'surface-2':   '#16213e',
-            'neon-purple': '#7000FF',
-            'neon-blue':   '#00E5FF',
-            'neon-pink':   '#FF007F',
-            'text-ghost':  '#3a3a5c',
-            'text-dim':    '#6b6b9a',
-            'text-base':   '#c8c8e8',
-            'text-bright': '#eeeeff',
-          },
-          fontFamily: {
-            display: ['Orbitron', 'monospace'],
-            mono:    ['Share Tech Mono', 'monospace'],
-            body:    ['Rajdhani', 'sans-serif'],
-          },
-        },
-      },
+      theme: { extend: { colors: { 'void': '#0a0a0f', 'surface-1': '#1a1a2e', 'surface-2': '#16213e', 'neon-purple': '#7000FF', 'neon-blue': '#00E5FF', 'neon-pink': '#FF007F', 'text-ghost': '#3a3a5c', 'text-dim': '#6b6b9a', 'text-base': '#c8c8e8', 'text-bright': '#eeeeff' }, fontFamily: { display: ['Orbitron', 'monospace'], mono: ['Share Tech Mono', 'monospace'], body: ['Rajdhani', 'sans-serif'] } } },
     };
+    if (window.tailwind && window.tailwind.config) tailwind.config = window.__TW_CONFIG__;
   </script>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    if (window.tailwind && window.tailwind.config) {
-      tailwind.config = window.__TW_CONFIG__;
-    }
-  </script>
-
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 
   <link rel="stylesheet" href="css/styles.css" />
 
-  <style id="theme-overrides">
-    /* Fondo global y textos base (Gris clarito de fondo) */
-    html.light body { background-color: #f4f4f7 !important; color: #11111a !important; }
-    html.light .bg-void { background-color: #f4f4f7 !important; }
-    html.light .text-text-base { color: #11111a !important; }
-    html.light .text-text-ghost { color: #777799 !important; }
-    html.light .text-text-dim { color: #555577 !important; }
-
-    /* Logos y Contraste */
-    html.light #loading-bar { background-color: #aa00ff !important; }
-    html.light .auth-logo span, html.light #header-title { color: #11111a !important; }
-    html.light #loading-screen { background-color: #ffffff !important; }
-    html.light .loading-logo { color: #11111a !important; }
-
-    /* 🟪 TABLERO DE JUEGO (CELDAS BLANCAS, BORDES NEGROS LIMPIOS) */
-    html.light .board-wrap, html.light #grid { 
-      background-color: #f4f4f7 !important; 
-      border: 1px solid #c0c0c8 !important; 
-      box-shadow: 0 4px 15px rgba(0,0,0,0.05) !important; 
-    }
-    html.light .cell { 
-      background-color: #ffffff !important; 
-      border: 1px solid #c0c0c8 !important; 
-    }
-
-    /* ⬜ CAJAS DE UI (FONDO BLANCO, BORDES NEGROS LIMPIOS) */
-    html.light .auth-box, 
-    html.light .game-arena > div,
-    html.light .modal-content,
-    html.light .dashboard-card { 
-      background: #ffffff !important; 
-      border: 1px solid #e0e0ea !important; 
-      box-shadow: 0 8px 25px rgba(0,0,0,0.05) !important; 
-      color: #11111a !important; 
-    }
-
-    /* Textos del tablero y UI */
-    html.light #turn-indicator, html.light .score-panel span { color: #11111a !important; text-shadow: none !important; }
-    html.light #global-timer { text-shadow: none !important; color: #11111a !important; }
-    html.light .wallet-info span { color: #11111a !important; text-shadow: none !important; }
-
-    /* Inputs de formulario */
-    html.light .input-field { 
-      background: #f4f4f7 !important; 
-      color: #11111a !important; 
-      border-color: #d0d0e0 !important; 
-    }
-    html.light .input-field:focus { 
-      border-color: #aa00ff !important; 
-    }
-    html.light .field-label { color: #333 !important; }
-
-    /* ☀️🌙 BOTÓN DE TEMA */
-    html.light #btn-theme-toggle { border-color: #11111a !important; color: #11111a !important; }
-
-    /* Pestañas de Auth */
-    html.light .auth-tab { color: #777799 !important; }
-    html.light .auth-tab.active { color: #11111a !important; border-bottom-color: #11111a !important; }
-
-    /* 📡 EMPAREJAMIENTO (Vs NEGRO) */
-    html.light #view-matchmaking { background-color: #ffffff !important; }
-    html.light .player-vs-text { color: #11111a !important; }
-
-    /* 🔥 CORRECCIÓN DE COLORES DE JUEGO (AZUL -> MORADO SUAVE) */
-    /* Texto de TÚ */
-    html.light #user-info .player-1 span.text-purple { color: #a855f7 !important; } /* Morado suave (purple-500) */
-    
-    /* Fichas del Jugador TÚ (Formerly blue, now soft purple) */
-    html.light .piece.player-1 { background-color: #9333ea !important; } /* Morado (purple-600) */
-    html.light .pulse-pieces.player-1::after { border-color: rgba(147, 51, 234, 0.45) !important; }
-
-    /* Bordes de las celdas en el tablero para que el morado suave domine */
-    html.light .cell { border-color: rgba(168, 85, 247, 0.15) !important; } /* Bordes morado suave sutil */
-    
-    /* Brillo exterior del tablero */
-    html.light .board-wrap { box-shadow: 0 0 25px rgba(168, 85, 247, 0.35) !important; } /* Brillo morado sutil */
-  </style>
-
   <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.3/howler.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
-
 </head>
 
 <body class="bg-void text-text-base font-body min-h-screen overflow-x-hidden">
 
   <div id="bg-effects" aria-hidden="true">
-    <div id="bg-grid"></div>
-    <div id="bg-scanline"></div>
-    <div id="bg-vignette"></div>
-    <div id="bg-particles"></div>
+    <div id="bg-grid"></div><div id="bg-scanline"></div><div id="bg-vignette"></div><div id="bg-particles"></div>
   </div>
 
   <header id="app-header" class="hidden" role="banner">
-    <div id="header-logo">
-      <span id="header-title" class="font-display font-black text-lg tracking-widest">
-        COLOR<span class="text-neon-pink">WARS</span>
-      </span>
-    </div>
+    <div id="header-logo"><span id="header-title" class="font-display font-black text-lg tracking-widest">COLOR<span class="text-neon-pink">WARS</span></span></div>
     <div id="header-right" class="flex items-center gap-3">
-      
       <button id="btn-theme-toggle" class="btn btn-ghost flex items-center justify-center" style="padding: 0; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--border-ghost); font-size: 1.1rem;" aria-label="Cambiar tema">
-        <span id="icon-sun">☀️</span>
-        <span id="icon-moon" class="hidden">🌙</span>
+        <span id="icon-sun">☀️</span><span id="icon-moon" class="hidden">🌙</span>
       </button>
-
-      <div id="header-wallet" class="hidden"></div>
-      <div id="header-user"   class="hidden"></div>
+      <div id="header-wallet" class="hidden"></div><div id="header-user" class="hidden"></div>
     </div>
   </header>
 
   <main id="app-root" role="main">
-
     <div id="loading-screen" class="loading-screen">
-      <div class="loading-inner">
-        <div class="loading-logo font-display font-black">
-          COLOR<span>WARS</span>
-        </div>
-        <div class="loading-bar-track">
-          <div class="loading-bar-fill" id="loading-bar"></div>
-        </div>
-        <p class="loading-status font-mono text-xs" id="loading-status">INICIALIZANDO…</p>
-      </div>
+      <div class="loading-inner"><div class="loading-logo font-display font-black">COLOR<span>WARS</span></div><div class="loading-bar-track"><div class="loading-bar-fill" id="loading-bar"></div></div><p class="loading-status font-mono text-xs" id="loading-status">INICIALIZANDO…</p></div>
     </div>
-
-    <section id="view-auth"        class="view hidden" data-view="auth"></section>
-    <section id="view-dashboard"   class="view hidden" data-view="dashboard"></section>
+    <section id="view-auth" class="view hidden" data-view="auth"></section>
+    <section id="view-dashboard" class="view hidden" data-view="dashboard"></section>
     <section id="view-matchmaking" class="view hidden" data-view="matchmaking"></section>
-    <section id="view-game"        class="view hidden" data-view="game"></section>
-    <section id="view-admin"       class="view hidden" data-view="admin"></section>
-
+    <section id="view-game" class="view hidden" data-view="game"></section>
+    <section id="view-admin" class="view hidden" data-view="admin"></section>
   </main>
 
-  <div id="modal-overlay" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-label="Modal">
-    <div id="modal-content" class="modal-content"></div>
-  </div>
-
+  <div id="modal-overlay" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-label="Modal"><div id="modal-content" class="modal-content"></div></div>
   <div id="toast-container" class="toast-container" role="status" aria-live="polite" aria-atomic="false"></div>
 
-  <a id="fab-whatsapp"
-     href="https://wa.me/584123400994"
-     target="_blank"
-     rel="noopener noreferrer"
-     class="fab-whatsapp"
-     aria-label="Soporte WhatsApp">
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="28" height="28" aria-hidden="true">
-      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
-      <path d="M12 0C5.373 0 0 5.373 0 12c0 2.126.554 4.122 1.524 5.855L.057 23.882a.75.75 0 00.921.921l6.043-1.466A11.945 11.945 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22a9.944 9.944 0 01-5.073-1.389l-.361-.214-3.741.908.924-3.638-.236-.374A9.944 9.944 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/>
-    </svg>
+  <a id="fab-whatsapp" href="https://wa.me/584123400994" target="_blank" rel="noopener noreferrer" class="fab-whatsapp" aria-label="Soporte WhatsApp">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="28" height="28" aria-hidden="true"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.126.554 4.122 1.524 5.855L.057 23.882a.75.75 0 00.921.921l6.043-1.466A11.945 11.945 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22a9.944 9.944 0 01-5.073-1.389l-.361-.214-3.741.908.924-3.638-.236-.374A9.944 9.944 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/></svg>
     <span class="fab-pulse" aria-hidden="true"></span>
   </a>
 
   <footer id="app-footer" class="app-footer">
-    <span id="footer-trigger" class="font-display text-xs text-text-ghost cursor-default select-none">CW · v2.0</span>
-    <span class="text-xs text-text-ghost font-mono">© 2025 COLOR WARS</span>
+    <span id="footer-trigger" class="font-display text-xs text-text-ghost cursor-default select-none">CW · v2.0</span><span class="text-xs text-text-ghost font-mono">© 2025 COLOR WARS</span>
   </footer>
 
   <script type="module">
-    window.addEventListener('error', (e) => {
-      console.error('[Boot Error]', e);
-      const $s = document.getElementById('loading-status');
-      if ($s) $s.textContent = 'ERROR DE CARGA — Recarga la página';
-    });
-
+    window.addEventListener('error', (e) => { console.error('[Boot Error]', e); const $s = document.getElementById('loading-status'); if ($s) $s.textContent = 'ERROR DE CARGA — Recarga la página'; });
     try {
-      const { initSupabase }   = await import('./js/core/supabase.js');
-      const { initState }      = await import('./js/core/state.js');
-      const { boot }           = await import('./js/core/app.js');
-
-      await import('./js/views/auth.js');
-      await import('./js/views/dashboard.js');
-      await import('./js/views/admin.js');
-      await import('./js/game/matchmaking.js');
-      await import('./js/game/board.js');
-      await import('./js/game/engine.js');
-
-      initSupabase();
-      initState();
-      await boot();
-
-    } catch (err) {
-      console.error('[Fatal Boot Error]', err);
-      const $s = document.getElementById('loading-status');
-      const $b = document.getElementById('loading-bar');
-      if ($s) $s.textContent = `ERROR: ${err.message}`;
-      if ($b) $b.style.background = '#FF007F';
-    }
+      const { initSupabase } = await import('./js/core/supabase.js'); const { initState } = await import('./js/core/state.js'); const { boot } = await import('./js/core/app.js');
+      await import('./js/views/auth.js'); await import('./js/views/dashboard.js'); await import('./js/views/admin.js'); await import('./js/game/matchmaking.js'); await import('./js/game/board.js');
+      initSupabase(); initState(); await boot();
+    } catch (err) { console.error('[Fatal Boot]', err); const $s = document.getElementById('loading-status'); if ($s) $s.textContent = `ERROR: ${err.message}`; }
   </script>
-
 </body>
 </html>
