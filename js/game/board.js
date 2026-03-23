@@ -5,7 +5,6 @@ import { getSupabase } from '../core/supabase.js';
 const BOARD_SIZE = 5; let _active = false; let _currentTurn = 'pink'; let _isAnimating = false; let _turnCount = 0; let _missedTurns = 0; let _$container = null; let _masterClockTimer = null; let _matchChannel = null; let _dbStartTime = null; let _dbLastMoveTime = null; let _lastDBUpdateTime = null; let _botIsMoving = false;
 let _lockPollingUntil = 0; let _opponentMissedTurns = 0; let _processingStrike = false;
 
-// 🛡️ CIRUGÍA: ACTION QUEUE (Cola de Animaciones)
 let _actionQueue = []; let _isProcessingQueue = false;
 
 const sfx = {
@@ -23,7 +22,7 @@ export async function initGameView($container) {
   if (!window.CW_SESSION || !window.CW_SESSION.board) { window.CW_SESSION = null; setView('dashboard'); return; }
   _active = true; _isAnimating = false; _turnCount = 0; _missedTurns = 0; _botIsMoving = false; _lastDBUpdateTime = Date.now();
   _lockPollingUntil = 0; _opponentMissedTurns = 0; _processingStrike = false;
-  _actionQueue = []; _isProcessingQueue = false; // Reset Queue
+  _actionQueue = []; _isProcessingQueue = false; 
   const sb = getSupabase();
 
   if (window.CW_SESSION.matchId) {
@@ -47,20 +46,17 @@ function _startRealtimeSubscription() {
   _matchChannel = sb.channel(`match_${window.CW_SESSION.matchId}`)
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches', filter: `id=eq.${window.CW_SESSION.matchId}` }, (payload) => {
       if (!_active) return; 
-      
-      // 🛡️ En vez de aplicar el movimiento de golpe, lo metemos a la cola
       _actionQueue.push(payload.new);
       _processQueue();
     }).subscribe();
 }
 
-// 🛡️ El Procesador de la Cola (Espera a que terminen las explosiones)
 async function _processQueue() {
   if (_isProcessingQueue || _actionQueue.length === 0 || !_active) return;
   _isProcessingQueue = true;
 
   while (_actionQueue.length > 0) {
-      if (_isAnimating) { await new Promise(r => setTimeout(r, 200)); continue; } // Pausa si hay explosiones
+      if (_isAnimating) { await new Promise(r => setTimeout(r, 200)); continue; } 
 
       const data = _actionQueue.shift();
       _lastDBUpdateTime = Date.now(); 
@@ -175,9 +171,23 @@ function handlePlayerClick(row, col) {
   _missedTurns = 0; _addMass(row, col, myColor); 
 }
 
+// 🛡️ CIRUGÍA FASE 4: Autoridad del Servidor
 async function _addMass(row, col, color) {
   if (_isAnimating) return; _isAnimating = true;
-  try { await _processMass(row, col, color); if (_active && !_checkGameOver()) _passTurn(); } catch(e) {} finally { _isAnimating = false; _botIsMoving = false; _processQueue(); }
+  try { 
+    if (window.CW_SESSION.isBotMatch) {
+        // En partida de Bot, calculamos todo local sin riesgo (No hay CP involucrados)
+        await _processMass(row, col, color); 
+        if (_active && !_checkGameOver()) _passTurn(); 
+    } else {
+        // MULTIJUGADOR: El cliente es ciego, delega todo a la Edge Function de Supabase
+        const sb = getSupabase();
+        await sb.functions.invoke('play_move', { 
+            body: { match_id: window.CW_SESSION.matchId, row: row, col: col } 
+        });
+        // WebSockets bajará la respuesta del servidor a la Action Queue
+    }
+  } catch(e) {} finally { _isAnimating = false; _botIsMoving = false; _processQueue(); }
 }
 
 async function _processMass(row, col, color) {
