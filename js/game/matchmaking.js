@@ -51,11 +51,12 @@ function renderSearchScreen($c) {
   });
 }
 
+// 🛡️ CIRUGÍA FASE 4: El RPC cobra los 30CP directamente en el servidor.
 async function payEntryFee() {
   const profile = getProfile();
   try {
-    const { data: cobroExitoso } = await getSupabase().rpc('cobrar_entrada', { jugador_id: profile.id, costo: ENTRY_FEE });
-    if (cobroExitoso) setProfile({ ...profile, wallet_bs: Number(profile.wallet_bs) - ENTRY_FEE });
+    const { data: cobroExitoso } = await getSupabase().rpc('cobrar_entrada_segura');
+    if (cobroExitoso) setProfile({ ...profile, wallet_bs: Number(profile.wallet_bs) - 30 });
   } catch(e) {}
 }
 
@@ -65,7 +66,6 @@ async function startSearch($c, profile) {
     const { data: waitingMatch, error: findErr } = await sb.from('matches').select('*').eq('status', 'waiting').neq('player_pink', profile.id).limit(1).maybeSingle();
     
     if (waitingMatch && !findErr) {
-      // 🛡️ CIRUGÍA: Optimistic Locking (.is) para evitar Race Conditions sin usar RPC. Solo entra el primero.
       const { data: joinedMatch, error: joinErr } = await sb.from('matches')
         .update({ player_blue: profile.id, status: 'playing', match_start_time: new Date().toISOString(), last_move_time: new Date().toISOString() })
         .eq('id', waitingMatch.id)
@@ -93,7 +93,6 @@ async function createOwnRoom($c, profile, sb) {
       
       _currentMatchId = newMatch.id;
       
-      // 🛡️ CIRUGÍA: WebSockets (Realtime) reemplaza al setInterval para escalabilidad
       _matchChannel = sb.channel('wait_' + _currentMatchId)
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches', filter: `id=eq.${_currentMatchId}` }, async (payload) => {
           const checkData = payload.new;
@@ -122,7 +121,7 @@ async function setupBotMatchFallback($c, profile) {
   try {
     if(_currentMatchId) {
         const {data: checkMatch} = await sb.from('matches').select('status').eq('id', _currentMatchId).single();
-        if(!checkMatch || checkMatch.status === 'cancelled') return; // Canceló manualmente
+        if(!checkMatch || checkMatch.status === 'cancelled') return; 
     }
     const isUserPink = Math.random() > 0.5; const randomName = VZLA_NAMES[Math.floor(Math.random() * VZLA_NAMES.length)]; const startTime = new Date().toISOString();
     if (_currentMatchId) { await sb.from('matches').update({ player_pink: isUserPink ? profile.id : 'BOT', player_blue: isUserPink ? 'BOT' : profile.id, status: 'playing', match_start_time: startTime, last_move_time: startTime }).eq('id', _currentMatchId); } 
