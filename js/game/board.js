@@ -45,11 +45,15 @@ export async function initGameView($container) {
 
 async function _connectToColyseus() {
     try {
-        _room = await _colyseusClient.joinOrCreate("arena");
+        // CIRUGÍA: Le pasamos el ID y el color exacto al Árbitro
+        _room = await _colyseusClient.joinOrCreate("arena", { 
+            matchId: window.CW_SESSION.matchId,
+            color: window.CW_SESSION.myColor 
+        });
 
         _room.onMessage("error", (mensaje) => {
             showToast(mensaje, "warning");
-            _isAnimating = false;
+            _isAnimating = false; // Destraba la pantalla si tocas cuando no debes
         });
 
         _room.onMessage("game_over", (data) => {
@@ -59,32 +63,28 @@ async function _connectToColyseus() {
         _room.onStateChange((state) => {
             if (!_active) return;
             
-            let huboExplosion = false;
+            let huboCambio = false;
             for(let r=0; r<5; r++) {
                 for(let c=0; c<5; c++) {
-                    const serverCell = state.board[r].cells[c];
-                    const localCell = window.CW_SESSION.board[r][c];
-                    if (localCell.owner !== serverCell.owner || localCell.mass !== serverCell.mass) {
-                        localCell.owner = serverCell.owner;
-                        localCell.mass = serverCell.mass;
-                        huboExplosion = true;
+                    if (window.CW_SESSION.board[r][c].owner !== state.board[r].cells[c].owner || window.CW_SESSION.board[r][c].mass !== state.board[r].cells[c].mass) {
+                        huboCambio = true;
                     }
+                    window.CW_SESSION.board[r][c].owner = state.board[r].cells[c].owner;
+                    window.CW_SESSION.board[r][c].mass = state.board[r].cells[c].mass;
                 }
             }
             
-            if (huboExplosion) {
-                sfx.pop.play();
-                _currentTurn = state.currentTurn;
-                _dbLastMoveTime = Date.now();
-                _missedTurns = 0;
-                _opponentMissedTurns = 0;
-                updateDOM();
-                _isAnimating = false;
-            }
+            if (huboCambio && _turnCount > 0) sfx.pop.play();
+            
+            _turnCount = state.turnCount;
+            _currentTurn = state.currentTurn;
+            _dbLastMoveTime = Date.now();
+            updateDOM();
+            _isAnimating = false; // Siempre libera el toque después de pintar
         });
 
     } catch (e) {
-        showToast("Error conectando a la arena", "error");
+        showToast("Error de conexión", "error");
     }
 }
 
