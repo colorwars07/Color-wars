@@ -15,6 +15,19 @@ export async function initAdminView($container) {
 async function renderAdmin($c) {
   const rate = getBcvRate();
   $c.innerHTML = `
+  <style>
+    .admin-card-item { background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); border-radius:16px; padding:16px; margin-bottom:12px; }
+    .adm-badge { padding:4px 10px; border-radius:8px; font-size:11px; font-weight:800; display:inline-block; }
+    .adm-badge-pending { background:rgba(251,191,36,.2); color:#FBB124; border:1px solid rgba(251,191,36,.4); }
+    .adm-badge-approved { background:rgba(20,184,166,.2); color:#5EEAD4; border:1px solid rgba(20,184,166,.4); }
+    .adm-badge-rejected { background:rgba(239,68,68,.2); color:#FCA5A5; border:1px solid rgba(239,68,68,.4); }
+    .adm-tab-btn { padding:8px 16px; border-radius:10px; font-weight:700; font-size:13px; border:1.5px solid rgba(255,255,255,.12); background:transparent; color:var(--text-dim); cursor:pointer; transition:all .15s; white-space:nowrap; }
+    .adm-tab-btn.active { background:var(--purple); border-color:var(--purple-light); color:#fff; }
+    .btn-approve { background:linear-gradient(135deg,#14B8A6,#0EA5E9); color:#fff; font-weight:800; border:none; border-radius:10px; padding:8px 12px; cursor:pointer; width:100%; transition:transform .15s; }
+    .btn-approve:active { transform:scale(.96); }
+    .btn-reject { background:linear-gradient(135deg,#EF4444,#DC2626); color:#fff; font-weight:800; border:none; border-radius:10px; padding:8px 12px; cursor:pointer; width:100%; transition:transform .15s; }
+    .btn-reject:active { transform:scale(.96); }
+  </style>
   <div class="admin-wrap" style="padding: 10px; max-width: 600px; margin: 0 auto;">
     <div style="background:linear-gradient(135deg,#5B21B6,#1e0a4e); border-bottom:1px solid rgba(124,58,237,.4); border-radius: 16px; padding: 16px; margin-bottom: 20px; box-shadow: 0 10px 20px rgba(0,0,0,0.5);">
       <div style="display:flex; justify-content: space-between; align-items: center;">
@@ -72,7 +85,7 @@ function renderRechargesList($c) {
       <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px;"><div><div style="font-weight:900; color:var(--text-bright); font-size:1rem;">${escHtml(r.user_email.split('@')[0])}</div><div style="font-size:0.65rem; color:var(--text-dim); font-family:var(--font-mono);">${dateStr}</div></div><span class="adm-badge ${badgeClass}">${badgeText}</span></div>
       <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:12px; font-size:0.8rem; background:rgba(0,0,0,0.3); padding:10px; border-radius:8px;"><div><span style="color:var(--text-dim);font-size:0.7rem;display:block;">Pagó (Bs)</span> <strong style="color:#00ff66;">${r.amount_bs} Bs</strong></div><div><span style="color:var(--text-dim);font-size:0.7rem;display:block;">Referencia</span> <strong style="color:#ffaa00;">${escHtml(r.reference)}</strong></div><div style="grid-column: span 2;"><span style="color:var(--text-dim);font-size:0.7rem;display:block;">Debe Recibir</span> <strong style="color:#00f0ff; font-size:1.1rem;">+${cpToCredit} CP</strong></div></div>
       ${r.image_url && r.status === 'pending' ? `<div style="margin-bottom:12px; text-align:center;"><a href="${escHtml(r.image_url)}" target="_blank" style="color:#00f0ff; text-decoration:underline; font-size:0.8rem;">👁️ Ver Comprobante</a></div>` : ''}
-      ${r.status === 'pending' ? `<div style="display:flex; gap:10px;"><button class="btn-approve" data-action="app-rec" data-id="${r.id}" data-email="${escHtml(r.user_email)}" data-cp="${cpToCredit}" data-img="${r.image_url}">✅ APROBAR</button><button class="btn-reject" data-action="rej-rec" data-id="${r.id}" data-img="${r.image_url}">❌ RECHAZAR</button></div>` : ''}
+      ${r.status === 'pending' ? `<div style="display:flex; gap:10px;"><button class="btn-approve" data-action="app-rec" data-id="${r.id}" data-img="${r.image_url}">✅ APROBAR</button><button class="btn-reject" data-action="rej-rec" data-id="${r.id}" data-img="${r.image_url}">❌ RECHAZAR</button></div>` : ''}
     </div>`;
   }).join('');
   $el.querySelectorAll('button[data-action]').forEach(btn => { btn.addEventListener('click', async (e) => { const b = e.target; b.disabled = true; b.style.opacity = '0.5'; if(b.dataset.action === 'app-rec') await handleApproveRec(b.dataset, $c); if(b.dataset.action === 'rej-rec') await handleRejectRec(b.dataset, $c); }); });
@@ -94,32 +107,32 @@ function renderWithdrawalsList($c) {
   $el.querySelectorAll('button[data-action]').forEach(btn => { btn.addEventListener('click', async (e) => { const b = e.target; b.disabled = true; b.style.opacity = '0.5'; if(b.dataset.action === 'app-wit') await handleApproveWit(b.dataset, $c); if(b.dataset.action === 'rej-wit') await handleRejectWit(b.dataset, $c); }); });
 }
 
-// 🛡️ CIRUGÍA: Protección contra race-conditions en los pagos
-async function handleApproveRec({id, email, cp, img}, $c) {
+// 🛡️ CIRUGÍA FASE 4: El RPC del servidor valida todo. Ya no enviamos el CP ni el Email desde el JS.
+async function handleApproveRec({id, img}, $c) {
   const sb = getSupabase();
-  const { data: user } = await sb.from('users').select('id,wallet_bs').eq('email', email).single();
-  if (user) {
-    await sb.from('users').update({ wallet_bs: Number(user.wallet_bs) + Number(cp) }).eq('id', user.id);
-    await sb.from('recharges').update({ status: 'approved' }).eq('id', id);
+  const { error } = await sb.rpc('admin_aprobar_recarga_segura', { p_id: id });
+  if (!error) {
     try { const urlObj = new URL(img); const pathSegments = urlObj.pathname.split('/comprobantes/'); if (pathSegments.length > 1) { sb.storage.from('comprobantes').remove([pathSegments[1]]).catch(()=>{}); } } catch(e) {}
-    showToast(`✅ +${cp} CP entregados`, 'success'); await fetchAllData($c);
+    showToast(`✅ Recarga aprobada y fondos entregados`, 'success'); await fetchAllData($c);
+  } else { showToast('Error validando en servidor', 'error'); await fetchAllData($c); }
+}
+
+async function handleRejectRec({id, img}, $c) {
+  const sb = getSupabase(); 
+  const { error } = await sb.rpc('admin_rechazar_recarga', { p_id: id });
+  if (!error) {
+    try { const urlObj = new URL(img); const pathSegments = urlObj.pathname.split('/comprobantes/'); if (pathSegments.length > 1) { sb.storage.from('comprobantes').remove([pathSegments[1]]).catch(()=>{}); } } catch(e) {}
+    showToast('❌ Recarga rechazada', 'warning'); await fetchAllData($c);
   }
 }
-async function handleRejectRec({id, img}, $c) {
-  const sb = getSupabase(); await sb.from('recharges').update({ status: 'rejected' }).eq('id', id);
-  try { const urlObj = new URL(img); const pathSegments = urlObj.pathname.split('/comprobantes/'); if (pathSegments.length > 1) { sb.storage.from('comprobantes').remove([pathSegments[1]]).catch(()=>{}); } } catch(e) {}
-  showToast('❌ Recarga rechazada', 'warning'); await fetchAllData($c);
-}
+
 async function handleApproveWit({id}, $c) {
-  await getSupabase().from('withdrawals').update({ status: 'approved' }).eq('id', id);
-  showToast('✅ Retiro PAGADO', 'success'); await fetchAllData($c);
+  const { error } = await getSupabase().rpc('admin_aprobar_retiro', { p_id: id });
+  if (!error) { showToast('✅ Retiro PAGADO', 'success'); await fetchAllData($c); }
 }
+
 async function handleRejectWit({id, email, cp}, $c) {
   const sb = getSupabase();
-  const { data: user } = await sb.from('users').select('id,wallet_bs').eq('email', email).single();
-  if (user) {
-    await sb.from('users').update({ wallet_bs: Number(user.wallet_bs) + Number(cp) }).eq('id', user.id);
-    await sb.from('withdrawals').update({ status: 'rejected' }).eq('id', id);
-    showToast(`❌ Retiro rechazado. Se devolvieron ${cp} CP`, 'warning'); await fetchAllData($c);
-  }
+  const { error } = await sb.rpc('admin_rechazar_retiro', { p_id: id, p_email: email, p_cp: Number(cp) });
+  if (!error) { showToast(`❌ Retiro rechazado. Se devolvieron ${cp} CP`, 'warning'); await fetchAllData($c); }
 }
