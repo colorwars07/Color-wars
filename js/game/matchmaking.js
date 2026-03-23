@@ -4,13 +4,14 @@ import { getSupabase } from '../core/supabase.js';
 
 registerView('matchmaking', initMatchmaking);
 
-let _searchTimer = null; let _countdownTimer = null; let _pollTimer = null; let _currentMatchId = null; 
+let _searchTimer = null; let _countdownTimer = null; let _matchChannel = null; let _currentMatchId = null; 
 const ENTRY_FEE = 30; const SEARCH_TIMEOUT_MS = 20000; 
 const VZLA_NAMES = ["Maikol", "El Bryan", "La Catira", "Yuridia", "El Gocho", "La Chama", "Yuleisi", "El Chino", "Juancho", "Dayana", "El Portugués", "El Convive", "Yordano", "Cristian"];
 
 export async function initMatchmaking($container) {
-  clearTimeout(_searchTimer); clearInterval(_countdownTimer); clearInterval(_pollTimer); 
-  _searchTimer = null; _countdownTimer = null; _pollTimer = null; _currentMatchId = null;
+  clearTimeout(_searchTimer); clearInterval(_countdownTimer); 
+  if (_matchChannel) { getSupabase().removeChannel(_matchChannel); _matchChannel = null; }
+  _searchTimer = null; _countdownTimer = null; _currentMatchId = null;
   window.CW_SESSION = null; 
   
   const profile = getProfile();
@@ -39,8 +40,9 @@ function renderSearchScreen($c) {
       const $btn = document.getElementById('btn-cancel-search');
       if($btn) { $btn.textContent = "CANCELANDO..."; $btn.disabled = true; }
       
-      clearTimeout(_searchTimer); clearInterval(_countdownTimer); clearInterval(_pollTimer); 
-      _searchTimer = null; _countdownTimer = null; _pollTimer = null;
+      clearTimeout(_searchTimer); clearInterval(_countdownTimer); 
+      if (_matchChannel) { getSupabase().removeChannel(_matchChannel); _matchChannel = null; }
+      _searchTimer = null; _countdownTimer = null; 
       
       window.sessionStorage.setItem('cw_skip_recon', '1');
       if (_currentMatchId) { getSupabase().from('matches').update({ status: 'cancelled' }).eq('id', _currentMatchId).then(); }
@@ -62,11 +64,15 @@ async function startSearch($c, profile) {
   try {
     const { data: waitingMatch, error: findErr } = await sb.from('matches').select('*').eq('status', 'waiting').neq('player_pink', profile.id).limit(1).maybeSingle();
     
-    // 🔥 CIRUGÍA: Verificamos si pudimos unirnos sin error de seguridad (RLS)
     if (waitingMatch && !findErr) {
-      const { data: joinedMatch, error: joinErr } = await sb.from('matches').update({ player_blue: profile.id, status: 'playing', match_start_time: new Date().toISOString(), last_move_time: new Date().toISOString() }).eq('id', waitingMatch.id).select().single();
+      // 🛡️ CIRUGÍA: Optimistic Locking (.is) para evitar Race Conditions sin usar RPC. Solo entra el primero.
+      const { data: joinedMatch, error: joinErr } = await sb.from('matches')
+        .update({ player_blue: profile.id, status: 'playing', match_start_time: new Date().toISOString(), last_move_time: new Date().toISOString() })
+        .eq('id', waitingMatch.id)
+        .is('player_blue', null) 
+        .select().single();
       
-      if (joinErr || !joinedMatch) throw new Error("Fallo de unión segura"); // Forzamos ir al catch para crear sala propia
+      if (joinErr || !joinedMatch) throw new Error("Fallo de unión segura o colisión detectada"); 
         
       await payEntryFee();
       const { data: oppData } = await sb.from('users').select('username').eq('id', waitingMatch.player_pink).single();
@@ -76,7 +82,6 @@ async function startSearch($c, profile) {
       await createOwnRoom($c, profile, sb);
     }
   } catch (err) { 
-    // 🔥 CIRUGÍA: Si falla al unirse, NO abortamos, creamos sala propia o jugamos contra Bot.
     await createOwnRoom($c, profile, sb); 
   }
 }
@@ -87,22 +92,27 @@ async function createOwnRoom($c, profile, sb) {
       if (createErr || !newMatch) throw new Error("Error db");
       
       _currentMatchId = newMatch.id;
-      _pollTimer = setInterval(async () => {
-        try {
-          const { data: checkData } = await sb.from('matches').select('status, player_blue').eq('id', _currentMatchId).single();
+      
+      // 🛡️ CIRUGÍA: WebSockets (Realtime) reemplaza al setInterval para escalabilidad
+      _matchChannel = sb.channel('wait_' + _currentMatchId)
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matches', filter: `id=eq.${_currentMatchId}` }, async (payload) => {
+          const checkData = payload.new;
           if (checkData && checkData.status === 'playing' && checkData.player_blue !== 'BOT') {
-            clearInterval(_pollTimer); clearTimeout(_searchTimer); await payEntryFee();
+            if (_matchChannel) { sb.removeChannel(_matchChannel); _matchChannel = null; }
+            clearTimeout(_searchTimer); await payEntryFee();
             const { data: oppData } = await sb.from('users').select('username').eq('id', checkData.player_blue).single();
             window.CW_SESSION = { isBotMatch: false, matchId: _currentMatchId, myColor: 'pink', rivalName: oppData?.username || "Jugador", board: Array(5).fill(null).map(() => Array(5).fill(null).map(() => ({ owner: null, mass: 0 }))) };
             renderCountdownScreen($c, profile.username, window.CW_SESSION.rivalName, "Empiezas tú (ROSA)"); startCountdown($c);
           }
-        } catch(e) {}
-      }, 1500);
+        }).subscribe();
       
-      _searchTimer = setTimeout(() => { clearInterval(_pollTimer); setupBotMatchFallback($c, profile); }, SEARCH_TIMEOUT_MS); 
+      _searchTimer = setTimeout(() => { 
+        if (_matchChannel) { sb.removeChannel(_matchChannel); _matchChannel = null; }
+        setupBotMatchFallback($c, profile); 
+      }, SEARCH_TIMEOUT_MS); 
   } catch(e) {
-      // Si todo falla (ej. sin internet total), volver al menú
-      clearInterval(_pollTimer); clearTimeout(_searchTimer);
+      if (_matchChannel) { sb.removeChannel(_matchChannel); _matchChannel = null; }
+      clearTimeout(_searchTimer);
       window.CW_SESSION = null; setView('dashboard'); showToast('Error de servidor. Intenta de nuevo.', 'error');
   }
 }
